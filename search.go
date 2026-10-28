@@ -17,13 +17,79 @@ type DescriptorSpace interface {
 }
 type MorphologySpace struct{}
 
-func (MorphologySpace) Coordinates(m Metrics) (float64, float64) { return m.BranchFraction, m.Porosity }
+// Coordinates scales the raw B/N tree metric from [0, .5) to [0, 1).
+// For N vertices, B <= floor((N-1)/2). This is a fixed scale, not a
+// normalization by the maximum for each candidate's particular vertex count.
+func (MorphologySpace) Coordinates(m Metrics) (float64, float64) {
+	return 2 * m.BranchFraction, m.Porosity
+}
+
+// LegacyMorphologySpace reproduces the original unscaled coordinates for
+// comparisons and replay of runs whose initial_archive lacks a descriptor_version.
+type LegacyMorphologySpace struct{}
+
+func (LegacyMorphologySpace) Coordinates(m Metrics) (float64, float64) {
+	return m.BranchFraction, m.Porosity
+}
+
+type DescriptorRange struct {
+	Min          float64 `json:"min"`
+	Max          float64 `json:"max"`
+	MaxExclusive bool    `json:"max_exclusive"`
+}
+
+// DescriptorDefinition describes normalized coordinates, not raw Metrics.
+// Custom spaces may implement DescriptorMetadata without changing DescriptorSpace.
+// Change Version whenever coordinate meaning changes.
+type DescriptorDefinition struct {
+	Version string
+	Axes    [2]string
+	Ranges  [2]DescriptorRange
+}
+type DescriptorMetadata interface {
+	Definition() DescriptorDefinition
+}
+
+func (MorphologySpace) Definition() DescriptorDefinition {
+	return DescriptorDefinition{
+		Version: "morphology-v2",
+		Axes:    [2]string{"scaled branch-point fraction (2 × B/N)", "removed-volume fraction"},
+		Ranges:  [2]DescriptorRange{{0, 1, true}, {0, 1, false}},
+	}
+}
+func (LegacyMorphologySpace) Definition() DescriptorDefinition {
+	return DescriptorDefinition{
+		Version: "morphology-v1",
+		Axes:    [2]string{"branch-point fraction (B/N)", "removed-volume fraction"},
+		Ranges:  [2]DescriptorRange{{0, .5, true}, {0, 1, false}},
+	}
+}
 
 type Archive struct {
-	ID    string            `json:"id"`
-	Bins  int               `json:"bins"`
-	Axes  [2]string         `json:"axes"`
-	Cells map[string]string `json:"cells"`
+	ID                string             `json:"id"`
+	Bins              int                `json:"bins"`
+	Axes              [2]string          `json:"axes"`
+	Cells             map[string]string  `json:"cells"`
+	DescriptorVersion string             `json:"descriptor_version"`
+	Ranges            [2]DescriptorRange `json:"ranges"`
+}
+
+// Compatible checks cell-coordinate semantics. Missing versions are legacy v1;
+// their cells must never be interpreted as v2. Unversioned custom spaces cannot
+// promise compatibility, even with one another.
+func (a Archive) Compatible(b Archive) bool {
+	return a.DescriptorVersion != "" && a.DescriptorVersion != "custom-unversioned" &&
+		a.DescriptorVersion == b.DescriptorVersion && a.Bins == b.Bins &&
+		a.Axes == b.Axes && a.Ranges == b.Ranges
+}
+
+// descriptorBin uses half-open bins, with the inclusive endpoint 1 in the last
+// bin. Reject bad coordinates rather than silently clamping invalid metrics.
+func descriptorBin(x float64, bins int) (int, bool) {
+	if bins < 1 || !finite(x) || x < 0 || x > 1 {
+		return 0, false
+	}
+	return min(bins-1, int(x*float64(bins))), true
 }
 
 func (e *Engine) family(r Recipe) string {
@@ -60,21 +126,38 @@ func (e *Engine) Archive(r Recipe) (Archive, error) {
 		return Archive{}, err
 	}
 	id := e.family(r)
-	a := Archive{id, 16, [2]string{"branch-point fraction", "removed-volume fraction"}, map[string]string{}}
 	elites := map[string]Candidate{}
 	space := e.Descriptors
 	if space == nil {
 		space = MorphologySpace{}
 	}
+	def := DescriptorDefinition{
+		Version: "custom-unversioned",
+		Axes:    [2]string{"custom descriptor x", "custom descriptor y"},
+		Ranges:  [2]DescriptorRange{{0, 1, false}, {0, 1, false}},
+	}
+	if metadata, ok := space.(DescriptorMetadata); ok {
+		def = metadata.Definition()
+		if def.Version == "" {
+			return Archive{}, fmt.Errorf("descriptor version must not be empty")
+		}
+	}
+	a := Archive{ID: id, Bins: 16, Axes: def.Axes, Cells: map[string]string{},
+		DescriptorVersion: def.Version, Ranges: def.Ranges}
 	for _, c := range all {
 		if !c.Valid || c.Feedback == "rejected" || e.family(c.Recipe) != id {
 			continue
 		}
 		x, y := space.Coordinates(c.Metrics)
-		if !finite(x) || !finite(y) || x < 0 || x > 1 || y < 0 || y > 1 {
+		bx, okX := descriptorBin(x, a.Bins)
+		by, okY := descriptorBin(y, a.Bins)
+		inRange := func(v float64, r DescriptorRange) bool {
+			return v >= r.Min && (v < r.Max || (!r.MaxExclusive && v == r.Max))
+		}
+		if !okX || !okY || !inRange(x, a.Ranges[0]) || !inRange(y, a.Ranges[1]) {
 			continue
 		}
-		key := fmt.Sprintf("%d,%d", min(15, int(x*16)), min(15, int(y*16)))
+		key := fmt.Sprintf("%d,%d", bx, by)
 		if old, ok := elites[key]; !ok || better(c, old) {
 			elites[key] = c
 			a.Cells[key] = c.ID
@@ -82,6 +165,17 @@ func (e *Engine) Archive(r Recipe) (Archive, error) {
 	}
 	return a, nil
 }
+
+// RebuildArchives replaces derived cell maps using existing candidate records
+// and the currently configured descriptors. Configure custom registries/spaces
+// first. Candidate manifests, artifacts, feedback and historical runs are never
+// rewritten. Each archive is atomically replaced; a failed rebuild can be retried.
+func (e *Engine) RebuildArchives() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.rebuildArchives()
+}
+
 func (e *Engine) rebuildArchives() error {
 	all, err := e.List()
 	if err != nil {

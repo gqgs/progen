@@ -177,10 +177,15 @@ async function drawArchive() {
   if (selected?.id !== expectedSelection) return;
   $("archive").replaceChildren();
   $("occupied").textContent = Object.keys(a.cells).length + " occupied";
+  const range = (r) => `[${r.min}, ${r.max}${r.max_exclusive ? ")" : "]"}`;
+  $("archiveX").textContent = `${a.axes[0]} ${range(a.ranges[0])} →`;
+  $("archiveY").textContent = `${a.axes[1]} ${range(a.ranges[1])} ↑`;
+  $("archive").setAttribute("aria-label", `${a.descriptor_version}: ${a.axes.join(", ")}`);
   for (let y = 15; y >= 0; y--) for (let x = 0; x < 16; x++) {
     const id = a.cells[`${x},${y}`];
     const cell = document.createElement("button");
-    cell.title = `Branch fraction ${x}/16, porosity ${y}/16${id ? " \xB7 " + id.slice(0, 8) : " \xB7 empty"}`;
+    const interval = (i, axis) => `[${i / a.bins}, ${(i + 1) / a.bins}${i === a.bins - 1 && !a.ranges[axis].max_exclusive ? "]" : ")"}`;
+    cell.title = `${a.axes[0]} ${interval(x, 0)}, ${a.axes[1]} ${interval(y, 1)}${id ? " · " + id.slice(0, 8) : " · empty"}`;
     cell.setAttribute("aria-label", cell.title);
     cell.disabled = !id;
     if (id) {
