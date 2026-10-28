@@ -91,7 +91,19 @@ Limits: 64 recipe nodes, resolution 8–128 per axis, 1–256 candidates per job
 
 ## Search and feedback
 
-MAP-Elites keeps one elite per cell in a 16×16 archive. The built-in axes are measured branch-point fraction (vertices with more than one child / all vertices) and removed-volume fraction (occupied samples removed / occupied base samples). Connected-solid quality is the fraction of occupied samples in the largest **six-neighbor grid component**, not a mesh-topology guarantee.
+MAP-Elites keeps one elite per cell in a 16×16 archive. The default horizontal coordinate is **scaled branch-point fraction**, `x = 2 × B/N`, where B counts graph vertices with more than one child and N counts all graph vertices. The saved `metrics.branch_fraction` remains the raw `B/N`. The vertical coordinate is removed-volume fraction (occupied samples removed / occupied base samples). Connected-solid quality is the fraction of occupied samples in the largest **six-neighbor grid component**, not a mesh-topology guarantee.
+
+For a rooted tree, `2B ≤ N−1`, so raw `B/N` lies in `[0, 0.5)` and the scaled coordinate lies in `[0, 1)`. For a fixed N, its maximum is `2 floor((N−1)/2) / N`; this is a fixed factor of two, not normalization against each specimen’s maximum. Binning uses `floor(16x)` and `floor(16y)`, with an inclusive coordinate of 1 assigned to bin 15. Every horizontal column is attainable by valid trees, but particular generators, parameter limits and finite samples may occupy only a subset. Fuller bins alone do not demonstrate greater visual diversity.
+
+Archive JSON declares `descriptor_version: "morphology-v2"`, axis labels and coordinate ranges (including exclusive upper bounds). An absent version denotes the original v1 mapping, `x = B/N`; never reinterpret its cell keys as v2. `Archive.Compatible` rejects missing, changed or unversioned custom definitions. `LegacyMorphologySpace` reproduces v1 coordinates for comparison or replay. Historical run snapshots stay unchanged: replaying a v1 run requires selecting that legacy space as well as restoring its original candidate records and feedback. New runs record v2 metadata in their initial archive.
+
+`Archive` and `/api/archive` always derive membership from candidate records under the current descriptor; persisted maps are disposable caches and are never loaded as search state. To migrate all persisted maps, stop other workspace writers and run:
+
+```sh
+go run ./cmd/rebuild-archives --workspace /path/to/existing/.progen
+```
+
+The command prints per-family v1/v2 occupancy on the same existing records and writes v2 maps. It does not generate specimens, change candidate IDs, metrics, artifacts, favorites or rejections, or rewrite historical runs. Replacement is atomic per archive; retry after an error. Libraries with custom operators or descriptors should configure them first, then call `engine.RebuildArchives()` instead. Custom `DescriptorSpace` implementations retain their coordinates; implement optional `DescriptorMetadata.Definition()` to declare their version, labels and attainable normalized ranges. Unversioned custom spaces receive generic labels and cannot assert compatibility.
 
 Validity requires finite nonempty geometry, valid indices and graph links, domain bounds, and sampled exclusion compliance. Invalid candidates remain inspectable but cannot enter the archive or be exported as valid GLB assets. Feedback does not override validity.
 
@@ -160,3 +172,16 @@ The initial 64³ example produced approximately 105,000 triangles; the cold-gene
 The architecture follows the [shared framework proposal](https://chatgpt.com/s/t_6ae05b5877488191b6ce00434ed792f9). Growth adapts [space colonization](https://algorithmicbotany.org/papers/colonization.egwnp2007.pdf); exploration implements [basic MAP-Elites](https://arxiv.org/abs/1504.04909). GLB validation uses the [Khronos validator](https://github.com/KhronosGroup/glTF-Validator). The supplied survey and atlas remain reference material; the atlas images are not used as generated output.
 
 Deferred: coupled simulations, particle/cell-complex operators, GPU generation, covariance adaptation, learned preferences, evolving recipe topology, production collision generation, and engine-specific integration.
+
+## Descriptor scaling validation
+
+`go test -v -run 'Test(TreeDescriptorBounds|DescriptorBinning|ArchiveRebuildAndCompatibility|CustomDescriptors|GeneratedRecordOccupancyComparison)$' ./...` checks exhaustive parent-index arrays through N=9, raw evaluator measurements, attainable upper columns, exact bin boundaries, metadata compatibility, feedback ranking, and repeatable rebuilding without rewriting candidate or historical run records.
+
+Comparison at source base `ca8ab3ac9272fa2207a460939ee0dabd3167b991`:
+
+| Evidence | Identical records compared | v1 occupied | v2 occupied |
+| --- | --- | --- | --- |
+| Synthetic metric fixtures | 256 attainable tree B/N–porosity pairs, plus favorite/rejected/invalid ranking records | 128/256 | 256/256 |
+| Controlled generation test | 16 generated records, all valid; `smallRecipe()` base, resolution 20, generation seed 42, search seed 42, one worker; first exact base then 15 random parameter samples | 14/256 | 16/256 |
+
+The generated comparison uses the existing generators unchanged and a small test recipe (base growth settings: 70 attractions, 60 iterations, 300 vertices). It is not a default-resolution generation benchmark or an inspection of the user’s collection. No preexisting candidate records were available in the patch workspace. Occupancy measures descriptor coverage, not visual diversity; comparisons are meaningful only with the same candidates, validity gates and feedback.

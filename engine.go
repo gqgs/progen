@@ -46,6 +46,8 @@ type NodeRecord struct {
 	Milliseconds int64  `json:"milliseconds"`
 }
 type Metrics struct {
+	// BranchFraction is B/N, where B counts graph vertices with >1 child.
+	// For a valid rooted tree it is in [0, .5); descriptor scaling is separate.
 	BranchFraction    float64 `json:"branch_fraction"`
 	Porosity          float64 `json:"porosity"`
 	ConnectedFraction float64 `json:"connected_fraction"`

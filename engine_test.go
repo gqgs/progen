@@ -340,19 +340,19 @@ func TestMutationArchiveAndFeedback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if archive.Cells["1,3"] != a.ID {
+	if archive.Cells["3,3"] != a.ID {
 		t.Fatal("wrong quality elite")
 	}
 	if err = e.Feedback(b.ID, "favorite"); err != nil {
 		t.Fatal(err)
 	}
 	archive, _ = e.Archive(r)
-	if archive.Cells["1,3"] != b.ID {
+	if archive.Cells["3,3"] != b.ID {
 		t.Fatal("favorite did not rank first")
 	}
 	e.Feedback(b.ID, "rejected")
 	archive, _ = e.Archive(r)
-	if archive.Cells["1,3"] != a.ID {
+	if archive.Cells["3,3"] != a.ID {
 		t.Fatal("rejected elite remained")
 	}
 	e.Feedback(a.ID, "rejected")
