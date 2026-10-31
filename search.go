@@ -26,6 +26,19 @@ func (MorphologySpace) Coordinates(m Metrics) (float64, float64) {
 
 // LegacyMorphologySpace reproduces the original unscaled coordinates for
 // comparisons and replay of runs whose initial_archive lacks a descriptor_version.
+// ImplicitMorphologySpace uses voxel measurements and is intentionally
+// versioned separately from tree-branch descriptors.
+type ImplicitMorphologySpace struct{}
+func (ImplicitMorphologySpace) Coordinates(m Metrics) (float64,float64) {
+ return m.SolidFraction,m.SurfaceFraction
+}
+func (ImplicitMorphologySpace) Definition() DescriptorDefinition {
+ return DescriptorDefinition{
+  Version:"implicit-morphology-v1",
+  Axes:[2]string{"occupied-volume fraction","exposed voxel-face fraction"},
+  Ranges:[2]DescriptorRange{{0,1,false},{0,1,false}},
+ }
+}
 type LegacyMorphologySpace struct{}
 
 func (LegacyMorphologySpace) Coordinates(m Metrics) (float64, float64) {
@@ -120,6 +133,11 @@ func better(a, b Candidate) bool {
 	}
 	return a.ID < b.ID
 }
+func (e *Engine) descriptorFor(r Recipe) DescriptorSpace {
+ if e.Descriptors != nil { return e.Descriptors }
+ if _,hasGraph:=r.Outputs["graph"];hasGraph { return MorphologySpace{} }
+ return ImplicitMorphologySpace{}
+}
 func (e *Engine) Archive(r Recipe) (Archive, error) {
 	all, err := e.List()
 	if err != nil {
@@ -127,10 +145,7 @@ func (e *Engine) Archive(r Recipe) (Archive, error) {
 	}
 	id := e.family(r)
 	elites := map[string]Candidate{}
-	space := e.Descriptors
-	if space == nil {
-		space = MorphologySpace{}
-	}
+	space := e.descriptorFor(r)
 	def := DescriptorDefinition{
 		Version: "custom-unversioned",
 		Axes:    [2]string{"custom descriptor x", "custom descriptor y"},
