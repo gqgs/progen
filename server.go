@@ -33,6 +33,7 @@ type Job struct {
 	Total      int        `json:"total"`
 	Stage      string     `json:"stage"`
 	Candidates []string   `json:"candidates"`
+	Failures   []CandidateFailure `json:"failures,omitempty"`
 	Error      string     `json:"error,omitempty"`
 	Created    time.Time  `json:"created"`
 }
@@ -467,7 +468,7 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request) {
 		j.Status = "running"
 		writeJSON(filepath.Join(s.Engine.Workspace, "jobs", id+".json"), j)
 		s.mu.Unlock()
-		results, runErr := s.Engine.Run(ctx, req, func(done, total int, node string) {
+		results, failures, runErr := s.Engine.RunWithFailures(ctx, req, func(done, total int, node string) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			j.Completed = done
@@ -477,6 +478,7 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		j.Status = "completed"
+		j.Failures = failures
 		if runErr != nil {
 			j.Status = "failed"
 			j.Error = runErr.Error()
