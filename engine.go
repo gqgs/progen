@@ -82,32 +82,35 @@ func (DefaultEvaluator) Evaluate(ctx context.Context, r Recipe, out map[string]A
 	g := out["graph"].Graph
 	v := out["volume"].Volume
 	base := out["base"].Volume
-	if mesh == nil || g == nil || v == nil || base == nil {
-		return m, []string{"candidate recipes must expose mesh, graph, volume and base outputs"}, nil
+	if mesh == nil || v == nil || base == nil {
+		return m, []string{"candidate recipes must expose mesh, volume and base outputs"}, nil
 	}
 	if err := ValidateMesh(mesh, r.Domain); err != nil {
 		problems = append(problems, err.Error())
 	}
 	m.Vertices = len(mesh.Positions)
 	m.Triangles = len(mesh.Indices) / 3
-	children := make([]int, len(g.Vertices))
-	for i, node := range g.Vertices {
-		if !node.Position.Finite() || !finite(node.Radius) || node.Radius <= 0 || node.Parent >= i || node.Parent < -1 || (i > 0 && node.Parent < 0) {
-			problems = append(problems, "invalid graph structure")
-			break
+	// Tree statistics are measured only for graph-producing recipes.
+	if g != nil {
+		children := make([]int, len(g.Vertices))
+		for i, node := range g.Vertices {
+			if !node.Position.Finite() || !finite(node.Radius) || node.Radius <= 0 || node.Parent >= i || node.Parent < -1 || (i > 0 && node.Parent < 0) {
+				problems = append(problems, "invalid graph structure")
+				break
+			}
+			if node.Parent >= 0 {
+				children[node.Parent]++
+			}
 		}
-		if node.Parent >= 0 {
-			children[node.Parent]++
+		branch := 0
+		for _, c := range children {
+			if c > 1 {
+				branch++
+			}
 		}
+		m.BranchFraction = float64(branch) / float64(max(1, len(children)))
+		m.Coverage = float64(g.Reached) / float64(max(1, g.AttractionCount))
 	}
-	branch := 0
-	for _, c := range children {
-		if c > 1 {
-			branch++
-		}
-	}
-	m.BranchFraction = float64(branch) / float64(max(1, len(children)))
-	m.Coverage = float64(g.Reached) / float64(max(1, g.AttractionCount))
 	n := r.Domain.Resolution
 	count, original := 0, 0
 	for i, x := range v.Values {
