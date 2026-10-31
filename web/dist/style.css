@@ -6,3 +6,7 @@
 @keyframes specimen-enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 .card{animation:specimen-enter 240ms ease-out both}.card img{opacity:0;transition:opacity 220ms ease}.card img.loaded{opacity:1}
 @media(prefers-reduced-motion:reduce){.card{animation:none}.card img{transition:none}}
+
+[hidden] { display:none !important; }
+#operatorParams label { margin-top: .65rem; }
+#operatorParams input[type="number"] { width:100%; }
