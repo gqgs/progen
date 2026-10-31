@@ -1,4 +1,5 @@
 node_modules/
 .progen/
-progen
+/progen
 coverage.out
+

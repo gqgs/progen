@@ -10,7 +10,7 @@ Requires Go 1.26 or newer. The compiled browser assets are included: Node.js, ne
 go run ./cmd/progen serve
 ```
 
-Open **http://127.0.0.1:8080**. Generate a batch, inspect a specimen, favorite it, and select **Explore variations**. Variations retain the specimen's generation seed and mutate its parameters. Browser rendering uses WebGL; headless generation and export do not.
+Open **http://127.0.0.1:8080**. Generate a batch, inspect a specimen, keep it, and select **Explore variations**. Variations retain the specimen's generation seed and mutate its parameters. Browser rendering uses WebGL; headless generation and export do not.
 
 For a standalone binary:
 
@@ -20,6 +20,16 @@ go build -o progen ./cmd/progen
 ```
 
 The default batch contains 16 candidates at 64³ samples. The first candidate uses the displayed settings; subsequent candidates are random parameter-space samples. Use a count of 1 for an exact experiment. A 32³ grid makes exploratory batches cheaper; 96³ or 128³ resolves smaller features. Changing resolution changes the sampled geometry and its measurements.
+
+## Review and cleanup
+
+In the gallery, completed batches default to **rejected**. Click **Keep** on specimens worth saving; the gallery still displays all specimens so you can inspect a batch without approving each rejection. Kept specimens remain available to the morphology archive and future variations. MAP-Elites uses provisional elites during a running search, then rejects unkept results when the job finishes. CLI generation retains neutral feedback for programmatic workflows.
+
+**Reject all unkept** also clears unreviewed specimens from earlier versions, preserving kept specimens. Rejection retains files for inspection and restoration. **Purge all generations** permanently removes every specimen (including kept ones), meshes, caches, archives, runs, and job history from the current workspace after confirmation. Finish or cancel active jobs first. Recipes outside the generated-data directories are preserved.
+
+**Randomize all attributes** samples every registered operator parameter within its schema bounds, including parameters only exposed through the recipe JSON, and changes the generation seed and grid resolution. Candidate count and variation scale remain your batch preferences.
+
+Cached meshes are checked for malformed topology before reuse; out-of-range vertex indices invalidate the cache and trigger regeneration. Index errors include the triangle, offending vertex, and vertex count. To regenerate old invalid specimens, import their recipe and generate a one-candidate batch.
 
 ## CLI
 
@@ -185,3 +195,4 @@ Comparison at source base `ca8ab3ac9272fa2207a460939ee0dabd3167b991`:
 | Controlled generation test | 16 generated records, all valid; `smallRecipe()` base, resolution 20, generation seed 42, search seed 42, one worker; first exact base then 15 random parameter samples | 14/256 | 16/256 |
 
 The generated comparison uses the existing generators unchanged and a small test recipe (base growth settings: 70 attractions, 60 iterations, 300 vertices). It is not a default-resolution generation benchmark or an inspection of the user’s collection. No preexisting candidate records were available in the patch workspace. Occupancy measures descriptor coverage, not visual diversity; comparisons are meaningful only with the same candidates, validity gates and feedback.
+

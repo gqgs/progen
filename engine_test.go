@@ -427,6 +427,10 @@ func TestAPIAndInterruptedJob(t *testing.T) {
 		t.Fatal(job)
 	}
 	id := job.Candidates[0]
+	defaultCandidate, err := e.Get(id)
+	if err != nil || defaultCandidate.Feedback != "rejected" {
+		t.Fatal("job did not default to rejected", err)
+	}
 	if w = request("GET", "/api/candidates/"+id+"/asset.glb", ""); w.Code != 200 || !bytes.HasPrefix(w.Body.Bytes(), []byte("glTF")) {
 		t.Fatal("GLB unavailable", w.Code)
 	}

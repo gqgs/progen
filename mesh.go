@@ -122,22 +122,37 @@ func ValidateMesh(m *Mesh, d Domain) error {
 	if m == nil || len(m.Positions) == 0 || len(m.Indices) == 0 || len(m.Indices)%3 != 0 || len(m.Normals) != len(m.Positions) {
 		return fmt.Errorf("empty or malformed mesh")
 	}
-	for i, p := range m.Positions {
-		if !p.Finite() || !m.Normals[i].Finite() || !d.Box.Contains(p) {
-			return fmt.Errorf("invalid mesh vertex %d", i)
-		}
+	if err := validateMeshStructure(m, d); err != nil {
+		return err
 	}
 	for i := 0; i < len(m.Indices); i += 3 {
 		a, b, c := m.Indices[i], m.Indices[i+1], m.Indices[i+2]
-		if int(a) >= len(m.Positions) || int(b) >= len(m.Positions) || int(c) >= len(m.Positions) {
-			return fmt.Errorf("mesh index out of bounds")
-		}
 		if m.Positions[b].Sub(m.Positions[a]).Cross(m.Positions[c].Sub(m.Positions[a])).Len() < 1e-14 {
 			return fmt.Errorf("degenerate triangle")
 		}
 	}
 	return nil
 }
+
+// Empty surfaces are legitimate generation results, but invalid topology is
+// corrupt output and must never be reused from cache.
+func validateMeshStructure(m *Mesh, d Domain) error {
+	if m == nil || len(m.Indices)%3 != 0 || len(m.Normals) != len(m.Positions) {
+		return fmt.Errorf("malformed mesh")
+	}
+	for i, p := range m.Positions {
+		if !p.Finite() || !m.Normals[i].Finite() || !d.Box.Contains(p) {
+			return fmt.Errorf("invalid mesh vertex %d", i)
+		}
+	}
+	for i, index := range m.Indices {
+		if uint64(index) >= uint64(len(m.Positions)) {
+			return fmt.Errorf("mesh index out of bounds: triangle %d references vertex %d of %d", i/3, index, len(m.Positions))
+		}
+	}
+	return nil
+}
+
 func EncodeGLB(m *Mesh) ([]byte, error) {
 	if m == nil || len(m.Positions) == 0 || len(m.Indices) == 0 {
 		return nil, fmt.Errorf("empty mesh")

@@ -168,6 +168,7 @@ async function drawGallery() {
 async function refresh() {
   candidates = await api("candidates");
   if (selected) selected = candidates.find((c) => c.id === selected.id) || null;
+  updateSelection();
   void drawGallery();
   await drawArchive();
 }
@@ -197,12 +198,25 @@ async function drawArchive() {
 }
 function updateSelection() {
   const c = selected;
-  if (!c) return;
+  if (!c) {
+    ++selectionEpoch;
+    dispose(model); dispose(graphObject);
+    model = graphObject = null;
+    $("selectedTitle").textContent = "No specimen selected";
+    $("selectedId").textContent = "Your selection will appear here.";
+    $("viewerHint").textContent = "Select a candidate to inspect";
+    $("viewerHint").classList.remove("hidden");
+    for (const id of ["favorite", "reject", "vary"]) $(id).disabled = true;
+    for (const id of ["downloadGLB", "downloadZIP"]) { $(id).removeAttribute("href"); $(id).classList.add("disabled"); }
+    $("metrics").replaceChildren();
+    $("provenance").textContent = "No selection";
+    return;
+  }
   $("selectedTitle").textContent = `Specimen ${c.id.slice(0, 6).toUpperCase()}`;
-  $("selectedId").textContent = `${c.feedback.toUpperCase()} \xB7 SEED ${c.recipe.seed} \xB7 ${c.id.slice(0, 16)}`;
+  $("selectedId").textContent = `${c.feedback === "favorite" ? "KEPT" : c.feedback.toUpperCase()} \xB7 SEED ${c.recipe.seed} \xB7 ${c.id.slice(0, 16)}`;
   $("favorite").disabled = false;
   $("reject").disabled = false;
-  $("favorite").textContent = c.feedback === "favorite" ? "\u2605 Favorited" : "\u2606 Favorite";
+  $("favorite").textContent = c.feedback === "favorite" ? "\u2605 Kept" : "\u2606 Keep";
   $("reject").textContent = c.feedback === "rejected" ? "Restore" : "Reject";
   $("vary").disabled = !c.valid || c.feedback === "rejected";
   $("metrics").replaceChildren();
@@ -277,8 +291,27 @@ async function feedback(state) {
   await refresh();
   updateSelection();
 }
-$("favorite").onclick = task(() => feedback(selected.feedback === "favorite" ? "neutral" : "favorite"));
+$("favorite").onclick = task(() => feedback(selected.feedback === "favorite" ? "rejected" : "favorite"));
 $("reject").onclick = task(() => feedback(selected.feedback === "rejected" ? "neutral" : "rejected"));
+$("randomize").onclick = task(async () => {
+  recipe = await api("recipe/randomize", { method: "POST", body: JSON.stringify(readControls()) });
+  syncControls();
+  $("reviewStatus").textContent = "Generation attributes randomized.";
+});
+$("rejectUnkept").onclick = task(async () => {
+  const result = await api("candidates/reject-unkept", { method: "POST" });
+  await refresh();
+  $("reviewStatus").textContent = `Rejected ${result.rejected} unkept specimens. Kept specimens preserved.`;
+});
+$("purge").onclick = task(async () => {
+  if (!confirm("Permanently delete ALL generations, including kept specimens, meshes, caches, archives, and job history?")) return;
+  await api("generations", { method: "DELETE", body: JSON.stringify({ confirm: "purge-all-generations" }) });
+  thumbs.clear();
+  $("error").classList.add("hidden");
+  $("job").classList.add("hidden");
+  await refresh();
+  $("reviewStatus").textContent = "All generations purged.";
+});
 $("filter").onchange = () => void drawGallery();
 async function pollJob() {
   if (!activeJob) return;
@@ -360,3 +393,4 @@ await task(async () => {
     if (interrupted) showError(new Error(interrupted.error));
   }
 })();
+
