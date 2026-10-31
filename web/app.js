@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 const $ = (id) => document.getElementById(id);
+let operatorSpecs = [], presetRecipes = [];
 let recipe, candidates = [], selected = null, activeJob = null, selectionEpoch = 0, submitting = false;
 const loader = new GLTFLoader();
 const thumbs = /* @__PURE__ */ new Map();
@@ -27,6 +28,10 @@ function readControls() {
       node.params[param] = Number($(id).value);
     }
   }
+  for (const input of document.querySelectorAll("#operatorParams input")) {
+    const node = r.nodes.find(n => n.id === input.dataset.node);
+    if (node) node.params[input.dataset.param] = Number(input.value);
+  }
   r.seed = $("seed").value;
   r.domain.resolution = Number($("resolution").value);
   return r;
@@ -35,9 +40,28 @@ function syncControls() {
   for (const [id, [op, param]] of Object.entries(bindings)) {
     const node = recipe.nodes.find((n) => n.operator === op);
     $(id).disabled = !node;
+    $(id).closest("label").hidden = !node;
     if (node) {
       $(id).value = node.params[param];
       $(id + "Value").value = $(id).value;
+    }
+  }
+  const dynamic = $("operatorParams");
+  dynamic.replaceChildren();
+  const fixed = new Set(Object.values(bindings).map(([op,param]) => op+":"+param));
+  for (const node of recipe.nodes) {
+    const desc = operatorSpecs.find(d => d.id === node.operator);
+    if (!desc) continue;
+    for (const [param, spec] of Object.entries(desc.parameters || {})) {
+      if (fixed.has(node.operator+":"+param)) continue;
+      const label = document.createElement("label");
+      label.textContent = node.operator + " · " + param;
+      const input = document.createElement("input");
+      input.type = "number"; input.min = spec.min; input.max = spec.max;
+      input.step = spec.type === "integer" ? "1" : "any";
+      input.value = node.params[param];
+      input.dataset.node = node.id; input.dataset.param = param;
+      label.append(input); dynamic.append(label);
     }
   }
   $("seed").value = recipe.seed;
@@ -192,7 +216,7 @@ async function refresh() {
 }
 async function drawArchive() {
   const expectedSelection = selected?.id;
-  const a = await api("archive" + (selected ? "?candidate=" + selected.id : ""));
+  const a = await api("archive" + (selected ? "?candidate=" + selected.id : "?preset=" + encodeURIComponent($("preset").value === "custom" ? "branching" : $("preset").value)));
   if (selected?.id !== expectedSelection) return;
   $("archive").replaceChildren();
   $("occupied").textContent = Object.keys(a.cells).length + " occupied";
@@ -286,6 +310,8 @@ async function select(c) {
   scene.add(model);
   frame(model, camera, controls);
   $("viewerHint").classList.add("hidden");
+  $("graphToggle").disabled = !c.artifacts?.graph;
+  if (!c.artifacts?.graph) return;
   const artifact = await api(`candidates/${c.id}/artifacts/graph`);
   if (epoch !== selectionEpoch) return;
   const positions = [];
@@ -404,6 +430,7 @@ $("recipeFile").onchange = task(async (event) => {
   const file = event.target.files[0];
   if (!file) return;
   recipe = await api("validate", { method: "POST", body: await file.text() });
+  $("preset").value = "custom";
   syncControls();
 });
 $("downloadRecipe").onclick = () => {
@@ -415,6 +442,20 @@ $("downloadRecipe").onclick = () => {
   setTimeout(() => URL.revokeObjectURL(url), 1e3);
 };
 await task(async () => {
+  operatorSpecs = await api("operators");
+  presetRecipes = await api("recipes");
+  for (const p of presetRecipes) $("preset").add(new Option(p.name, p.id));
+  $("preset").add(new Option("Imported recipe", "custom"));
+  $("preset").value = "branching";
+  $("preset").onchange = task(async () => {
+    const found = presetRecipes.find(p => p.id === $("preset").value);
+    if (!found) return;
+    recipe = await api("validate", {method:"POST", body: JSON.stringify(found.recipe)});
+    selected = null;
+    updateSelection();
+    syncControls();
+    await drawArchive();
+  });
   recipe = await api("recipe");
   syncControls();
   await refresh();

@@ -279,3 +279,13 @@ func validName(s string) bool {
 	}
 	return true
 }
+
+// RecipePreset is a reproducible starting pipeline for a geometry family.
+type RecipePreset struct {
+ ID string `json:"id"`
+ Name string `json:"name"`
+ Recipe Recipe `json:"recipe"`
+}
+func RecipePresets() []RecipePreset {
+ return []RecipePreset{{ID:"branching", Name:"Branching / coral", Recipe:DefaultRecipe()}}
+}

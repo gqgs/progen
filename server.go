@@ -152,6 +152,7 @@ func (s *Server) Handler() http.Handler {
 		}
 	})
 	mux.HandleFunc("GET /api/operators", func(w http.ResponseWriter, r *http.Request) { respond(w, 200, s.Engine.Registry.Descriptors()) })
+	mux.HandleFunc("GET /api/recipes", func(w http.ResponseWriter, r *http.Request) { respond(w, 200, RecipePresets()) })
 	mux.HandleFunc("GET /api/recipe", func(w http.ResponseWriter, r *http.Request) {
 		p, _, err := s.Engine.Registry.Compile(DefaultRecipe())
 		if err != nil {
@@ -332,6 +333,13 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /api/archive", func(w http.ResponseWriter, r *http.Request) {
 		recipe := DefaultRecipe()
+		if presetID := r.URL.Query().Get("preset"); presetID != "" {
+			found := false
+			for _, preset := range RecipePresets() {
+				if preset.ID == presetID { recipe = preset.Recipe; found = true; break }
+			}
+			if !found { problem(w, 400, fmt.Errorf("unknown preset")); return }
+		}
 		if id := r.URL.Query().Get("candidate"); id != "" {
 			c, err := s.Engine.Get(id)
 			if err != nil {
