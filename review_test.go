@@ -126,3 +126,44 @@ func TestReviewRandomizationAndPurge(t *testing.T) {
 		t.Fatal("generation after purge:", err)
 	}
 }
+
+// This recipe failed with "mesh index out of bounds" in a user workspace.
+// It exercises a 96^3 volume and indices beyond the signed 16-bit boundary.
+func TestSpecimenA0477AFreshAndCachedMesh(t *testing.T) {
+	raw, err := os.ReadFile("testdata/a0477a-recipe.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recipe Recipe
+	if err := json.Unmarshal(raw, &recipe); err != nil {
+		t.Fatal(err)
+	}
+	e := testEngine(t)
+	for attempt := 0; attempt < 2; attempt++ {
+		c, err := e.Evaluate(context.Background(), recipe, "", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !c.Valid {
+			t.Fatalf("attempt %d: %v", attempt, c.Problems)
+		}
+		if c.Metrics.Vertices != 37562 || c.Metrics.Triangles != 75220 {
+			t.Fatalf("recipe geometry changed: %+v", c.Metrics)
+		}
+		if got := c.Artifacts["volume"].Hash; got != "375769b2ff77e8a515693d7df4a098a7b3f13f60bf0c2593ce16fa67566dad2e" {
+			t.Fatalf("volume differs from original specimen: %s", got)
+		}
+		a, err := e.Artifact(c, "mesh")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateMesh(a.Mesh, c.Recipe.Domain); err != nil {
+			t.Fatal(err)
+		}
+		for _, node := range c.Nodes {
+			if node.ID == "surface" && node.Cached != (attempt == 1) {
+				t.Fatal("unexpected cache state")
+			}
+		}
+	}
+}
