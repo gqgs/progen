@@ -173,7 +173,7 @@ async function drawGallery() {
     card.dataset.id = c.id;
     card.setAttribute("aria-label", `Inspect specimen ${c.id.slice(0, 8)}`);
     const img = document.createElement("img");
-    img.alt = c.valid ? "Generated branching specimen" : "Invalid specimen";
+    img.alt = c.valid ? "Generated procedural specimen" : "Invalid specimen";
     const info = document.createElement("div");
     info.className = "card-info";
     const strong = document.createElement("strong");

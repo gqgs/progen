@@ -202,3 +202,7 @@ The generated comparison uses the existing generators unchanged and a small test
 ## Volume-first geometry families
 
 The engine requires `mesh`, `base`, and `volume` outputs for default candidate validation, but treats graph/skeleton as optional. Family presets are available through `GET /api/recipes` and the geometry selector. Parameters exposed by additional operator descriptors are editable in the UI; imported recipes retain their pipeline. Skeleton overlay is disabled for graph-free outputs.
+
+### Implicit geometry presets
+
+**TPMS / periodic surfaces** generates finite thickened level sets of gyroid, Schwarz-P or diamond functions. Controls: surface, frequency, thickness, phase, warp and spherical envelope. **Voronoi / cellular foam** generates thick interfaces between deterministic seeded nearest-neighbor cells, with wall thickness, anisotropy, warp and envelope controls. Neither creates a graph. Both return sampled volumes using the existing mesher and GLB pipeline. As with other operators, these are level-set values, not exact signed distances. Resolution matters for thin walls; test at 32³, refine at 64³ or 128³.

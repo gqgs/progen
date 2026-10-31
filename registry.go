@@ -126,6 +126,33 @@ func Builtins() *Registry {
 			return Outputs{"mesh": {Kind: "mesh", Mesh: v}}, e
 		}), nil
 	})
+	add("tpms",nil,map[string]Port{"volume":volume},map[string]Param{
+		"surface":parameter(0,0,2,true,true),
+		"frequency":parameter(2.2,1,5,false,true),
+		"thickness":parameter(.28,.1,.6,false,true),
+		"phase":parameter(0,0,6.28,false,true),
+		"warp":parameter(.12,0,.4,false,true),
+		"envelope":parameter(.88,.65,.95,false,true),
+	},func(p map[string]float64)(Operator,error){
+		op:=TPMS{int(p["surface"]),p["frequency"],p["thickness"],p["phase"],p["warp"],p["envelope"]}
+		return OperatorFunc(func(c context.Context,d Domain,seed uint64,_ Inputs)(Outputs,error){
+			v,e:=op.Generate(c,d,seed)
+			return Outputs{"volume":{Kind:"volume",Volume:v}},e
+		}),nil
+	})
+	add("voronoi_foam",nil,map[string]Port{"volume":volume},map[string]Param{
+		"cells":parameter(28,6,96,true,true),
+		"wall":parameter(.1,.045,.25,false,true),
+		"anisotropy":parameter(1,.5,2.5,false,true),
+		"warp":parameter(.075,0,.24,false,true),
+		"envelope":parameter(.88,.65,.95,false,true),
+	},func(p map[string]float64)(Operator,error){
+		op:=VoronoiFoam{int(p["cells"]),p["wall"],p["anisotropy"],p["warp"],p["envelope"]}
+		return OperatorFunc(func(c context.Context,d Domain,seed uint64,_ Inputs)(Outputs,error){
+			v,e:=op.Generate(c,d,seed)
+			return Outputs{"volume":{Kind:"volume",Volume:v}},e
+		}),nil
+	})
 	return r
 }
 
@@ -286,6 +313,24 @@ type RecipePreset struct {
  Name string `json:"name"`
  Recipe Recipe `json:"recipe"`
 }
+func ImplicitRecipe(operator string) Recipe {
+ r:=DefaultRecipe()
+ r.Name=operator
+ r.Nodes=[]Node{
+  {ID:"implicit",Operator:operator,Version:"1"},
+  {ID:"surface",Operator:"mesh",Version:"1",Inputs:map[string]Reference{"volume":{Node:"implicit",Port:"volume"}}},
+ }
+ r.Outputs=map[string]Reference{
+  "mesh":{Node:"surface",Port:"mesh"},
+  "base":{Node:"implicit",Port:"volume"},
+  "volume":{Node:"implicit",Port:"volume"},
+ }
+ return r
+}
 func RecipePresets() []RecipePreset {
- return []RecipePreset{{ID:"branching", Name:"Branching / coral", Recipe:DefaultRecipe()}}
+ return []RecipePreset{
+  {ID:"branching",Name:"Branching / coral",Recipe:DefaultRecipe()},
+  {ID:"tpms",Name:"TPMS / periodic surfaces",Recipe:ImplicitRecipe("tpms")},
+  {ID:"voronoi",Name:"Voronoi / cellular foam",Recipe:ImplicitRecipe("voronoi_foam")},
+ }
 }
