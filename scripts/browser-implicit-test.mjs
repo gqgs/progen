@@ -27,11 +27,45 @@ try {
  const errors=[];
  page.on("pageerror",e=>errors.push(e.message));
  page.on("console",m=>{if(m.type()==="error"&&!m.text().includes("favicon"))errors.push(m.text())});
+ // Startup should use the same full server randomizer as the manual button.
+ const isRandomizeResponse = response => response.url().endsWith("/api/recipe/randomize") && response.status()===200;
+ const startupResponse = page.waitForResponse(isRandomizeResponse);
  await page.goto(base);
+ const startupRecipe = await (await startupResponse).json();
+ await page.waitForFunction(seed => document.querySelector("#seed").value===seed && !document.querySelector("#generate").disabled,startupRecipe.seed);
+ assert.equal(await page.locator("#resolution").inputValue(),String(startupRecipe.domain.resolution));
  await page.waitForFunction(()=>document.querySelectorAll("#preset option").length>=5);
+ const presets = await (await fetch(base+"/api/recipes")).json();
  for (const [family, node] of [["tpms","implicit"],["voronoi","implicit"],["hybrid","combine"]]) {
+  const randomizedResponse = page.waitForResponse(isRandomizeResponse);
   await page.locator("#preset").selectOption(family);
+  const randomized = await (await randomizedResponse).json();
+  await page.waitForFunction(seed=>document.querySelector("#seed").value===seed && !document.querySelector("#generate").disabled,randomized.seed);
+  assert.equal(await page.locator("#resolution").inputValue(),String(randomized.domain.resolution),family+" resolution not randomized");
+  for (const n of randomized.nodes) {
+   for (const [param,value] of Object.entries(n.params||{})) {
+    const input = page.locator(`#operatorParams input[data-node="${n.id}"][data-param="${param}"]`);
+    if (await input.count()) assert.equal(Number(await input.inputValue()),value,family+" parameter "+param+" did not sync");
+   }
+  }
   await page.waitForFunction(n=>document.querySelector('#operatorParams input[data-node="'+n+'"]')!==null,node);
+
+  // The randomizer intentionally explores the full parameter domain, including
+  // thin/fragmented outputs. Restore known-valid recipe parameters before
+  // checking mesh generation, so the smoke test is not probabilistic.
+  const preset = presets.find(p=>p.id===family);
+  const validatedResponse = await fetch(base+"/api/validate",{
+   method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(preset.recipe),
+  });
+  assert.equal(validatedResponse.status,200);
+  const reference = await validatedResponse.json();
+  for (const n of reference.nodes) {
+   for (const [param,value] of Object.entries(n.params||{})) {
+    const input = page.locator(`#operatorParams input[data-node="${n.id}"][data-param="${param}"]`);
+    if (await input.count()) await input.fill(String(value));
+   }
+  }
+  await page.locator("#seed").fill("42");
   await page.locator("#resolution").selectOption("32");
   await page.locator("#count").fill("1");
   await page.locator("#generate").click();
