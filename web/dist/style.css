@@ -2,3 +2,7 @@
 
 
 .review-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px}.review-actions button{width:auto;margin:0}.review-actions span{font-size:12px;color:#9da9a3}.danger{color:#ed9d95;border-color:#80534e}
+
+@keyframes specimen-enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.card{animation:specimen-enter 240ms ease-out both}.card img{opacity:0;transition:opacity 220ms ease}.card img.loaded{opacity:1}
+@media(prefers-reduced-motion:reduce){.card{animation:none}.card img{transition:none}}

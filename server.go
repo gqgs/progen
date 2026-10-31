@@ -107,6 +107,50 @@ func decode(w http.ResponseWriter, r *http.Request, v any) error {
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	// Snapshot events also recover missed completions after reconnecting.
+	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			problem(w, 500, fmt.Errorf("streaming unavailable"))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("X-Accel-Buffering", "no")
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		previous := ""
+		heartbeat := 0
+		for {
+			candidates, err := s.Engine.List()
+			if err != nil {
+				return
+			}
+			payload, err := json.Marshal(candidates)
+			if err != nil {
+				return
+			}
+			current := string(payload)
+			if current != previous {
+				if _, err := fmt.Fprintf(w, "data: %s\n\n", current); err != nil {
+					return
+				}
+				previous = current
+				flusher.Flush()
+			} else if heartbeat%60 == 0 {
+				if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+					return
+				}
+				flusher.Flush()
+			}
+			heartbeat++
+			select {
+			case <-r.Context().Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	})
 	mux.HandleFunc("GET /api/operators", func(w http.ResponseWriter, r *http.Request) { respond(w, 200, s.Engine.Registry.Descriptors()) })
 	mux.HandleFunc("GET /api/recipe", func(w http.ResponseWriter, r *http.Request) {
 		p, _, err := s.Engine.Registry.Compile(DefaultRecipe())

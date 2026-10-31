@@ -94,13 +94,14 @@ try {
   await page.locator("#count").fill("2");
   await page.locator("#search").click();
   await page.waitForFunction(() => document.querySelector("#jobState").textContent === "COMPLETED", {}, { timeout: 6e4 });
-  await page.waitForFunction(() => document.querySelectorAll("#archive .filled").length > 0);
   await page.locator(`.card[data-id="${first}"]`).click();
+  await page.waitForFunction(() => document.querySelectorAll("#archive .filled").length > 0);
   await page.waitForFunction(() => document.querySelector("#viewerHint").classList.contains("hidden"));
   await page.screenshot({ path: path.join(workspace, "desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: path.join(workspace, "mobile.png"), fullPage: true });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "mobile overflow");
+  await page.goto("about:blank");
   await stop();
   await start();
   await page.goto(base);
