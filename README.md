@@ -29,7 +29,7 @@ New gallery specimens remain unreviewed until you keep or reject them. **Keep** 
 
 **Purge all generations** removes all specimens, caches, archives, and history after confirmation. Rejection has no restore action. Recipes outside generated-data directories are preserved.
 
-**Randomize all attributes** samples every registered operator parameter within its schema bounds, including parameters only exposed through the recipe JSON, and changes the generation seed and grid resolution. Candidate count and variation scale remain your batch preferences.
+**Randomize all attributes** samples every registered operator parameter within its schema bounds, including parameters only exposed through the recipe JSON, and changes the generation seed and grid resolution. The studio now invokes this same operation automatically on first load and whenever you select a different geometry family. It does **not** generate a batch automatically, and the number of candidates and variation scale remain unchanged. Imported JSON recipes remain as provided until you explicitly randomize them. Candidate count and variation scale remain your batch preferences.
 
 Cached meshes are checked for malformed topology before reuse; out-of-range vertex indices invalidate the cache and trigger regeneration. Index errors include the triangle, offending vertex, and vertex count. To regenerate old invalid specimens, import their recipe and generate a one-candidate batch.
 
