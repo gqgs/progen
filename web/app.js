@@ -3,6 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 const $ = (id) => document.getElementById(id);
 let operatorSpecs = [], presetRecipes = [];
+let recipeChangeEpoch = 0, recipeRandomizing = false, activeFamily = "branching";
 let recipe, candidates = [], selected = null, activeJob = null, selectionEpoch = 0, submitting = false;
 const loader = new GLTFLoader();
 const thumbs = /* @__PURE__ */ new Map();
@@ -68,6 +69,30 @@ function syncControls() {
   const resolution = String(recipe.domain.resolution);
   if (![...$("resolution").options].some((o) => o.value === resolution)) $("resolution").add(new Option(resolution, resolution));
   $("resolution").value = resolution;
+}
+// All entry points use the same server-side randomizer, which covers hidden
+// parameters as well as seed and resolution. The epoch prevents late replies
+// from overwriting a more recent family selection.
+function setRecipeRandomizing(busy) {
+  recipeRandomizing = busy;
+  for (const id of ["generate", "search", "randomize"]) $(id).disabled = busy;
+}
+async function randomizeAllAttributes(baseRecipe) {
+  const epoch = ++recipeChangeEpoch;
+  setRecipeRandomizing(true);
+  try {
+    const updated = await api("recipe/randomize", {
+      method: "POST",
+      body: JSON.stringify(baseRecipe),
+    });
+    if (epoch !== recipeChangeEpoch) return false;
+    recipe = updated;
+    syncControls();
+    $("reviewStatus").textContent = "Generation attributes randomized.";
+    return true;
+  } finally {
+    if (epoch === recipeChangeEpoch) setRecipeRandomizing(false);
+  }
 }
 for (const id of Object.keys(bindings)) $(id).addEventListener("input", () => $(id + "Value").value = $(id).value);
 const scene = new THREE.Scene();
@@ -348,11 +373,7 @@ async function feedback(state) {
 }
 $("favorite").onclick = task(() => feedback(selected.feedback === "favorite" ? "neutral" : "favorite"));
 $("reject").onclick = task(() => feedback("rejected"));
-$("randomize").onclick = task(async () => {
-  recipe = await api("recipe/randomize", { method: "POST", body: JSON.stringify(readControls()) });
-  syncControls();
-  $("reviewStatus").textContent = "Generation attributes randomized.";
-});
+$("randomize").onclick = task(() => randomizeAllAttributes(readControls()));
 $("rejectUnkept").onclick = task(async () => {
   events.close(); ++galleryEpoch;
   await Promise.allSettled([...pendingThumbnails]);
@@ -404,6 +425,7 @@ async function pollJob() {
   }
 }
 async function start(kind) {
+  if (recipeRandomizing) throw new Error("Wait for the geometry settings to finish randomizing.");
   if (activeJob || submitting) throw new Error("Wait for the active job or cancel it first.");
   submitting = true;
   try {
@@ -438,9 +460,18 @@ $("cancel").onclick = task(async () => {
 $("recipeFile").onchange = task(async (event) => {
   const file = event.target.files[0];
   if (!file) return;
-  recipe = await api("validate", { method: "POST", body: await file.text() });
-  $("preset").value = "custom";
-  syncControls();
+  const epoch = ++recipeChangeEpoch;
+  setRecipeRandomizing(true);
+  try {
+    const imported = await api("validate", { method: "POST", body: await file.text() });
+    if (epoch !== recipeChangeEpoch) return;
+    recipe = imported;
+    activeFamily = "custom";
+    $("preset").value = "custom";
+    syncControls();
+  } finally {
+    if (epoch === recipeChangeEpoch) setRecipeRandomizing(false);
+  }
 });
 $("downloadRecipe").onclick = () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(readControls(), null, 2)], { type: "application/json" }));
@@ -457,16 +488,21 @@ await task(async () => {
   $("preset").add(new Option("Imported recipe", "custom"));
   $("preset").value = "branching";
   $("preset").onchange = task(async () => {
-    const found = presetRecipes.find(p => p.id === $("preset").value);
+    const family = $("preset").value;
+    const found = presetRecipes.find(p => p.id === family);
     if (!found) return;
-    recipe = await api("validate", {method:"POST", body: JSON.stringify(found.recipe)});
-    selected = null;
-    updateSelection();
-    syncControls();
-    await drawArchive();
+    try {
+      if (!await randomizeAllAttributes(found.recipe)) return;
+      activeFamily = family;
+      selected = null;
+      updateSelection();
+      await drawArchive();
+    } catch (error) {
+      if ($("preset").value === family) $("preset").value = activeFamily;
+      throw error;
+    }
   });
-  recipe = await api("recipe");
-  syncControls();
+  await randomizeAllAttributes(await api("recipe"));
   await refresh();
   if (candidates.length) await select(candidates[0]);
   const jobs = await api("jobs");
