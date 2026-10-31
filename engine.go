@@ -142,17 +142,22 @@ func (DefaultEvaluator) Evaluate(ctx context.Context, r Recipe, out map[string]A
 		// This is a resolution-dependent geometric proxy, not exact mesh area.
 		exposed := 0
 		for i, value := range v.Values {
-			if value >= 0 { continue }
-			x,y,z := i%n,(i/n)%n,i/(n*n)
-			for _,p := range [][3]int{{x-1,y,z},{x+1,y,z},{x,y-1,z},{x,y+1,z},{x,y,z-1},{x,y,z+1}} {
-				if p[0]<0 || p[1]<0 || p[2]<0 || p[0]>=n || p[1]>=n || p[2]>=n {
-					exposed++; continue
+			if value >= 0 {
+				continue
+			}
+			x, y, z := i%n, (i/n)%n, i/(n*n)
+			for _, p := range [][3]int{{x - 1, y, z}, {x + 1, y, z}, {x, y - 1, z}, {x, y + 1, z}, {x, y, z - 1}, {x, y, z + 1}} {
+				if p[0] < 0 || p[1] < 0 || p[2] < 0 || p[0] >= n || p[1] >= n || p[2] >= n {
+					exposed++
+					continue
 				}
-				j:=p[0]+n*(p[1]+n*p[2])
-				if v.Values[j]>=0 { exposed++ }
+				j := p[0] + n*(p[1]+n*p[2])
+				if v.Values[j] >= 0 {
+					exposed++
+				}
 			}
 		}
-		m.SurfaceFraction = float64(exposed) / (6*float64(count))
+		m.SurfaceFraction = float64(exposed) / (6 * float64(count))
 	}
 
 	if original > 0 {
@@ -378,6 +383,13 @@ func (e *Engine) Evaluate(ctx context.Context, recipe Recipe, parent string, pro
 	if err != nil {
 		return nil, err
 	}
+	var sourceGLB []byte
+	if p.Source != nil {
+		sourceGLB, _, err = e.sourceBytes(p.Source)
+		if err != nil {
+			return nil, err
+		}
+	}
 	id := hash(struct {
 		Recipe Recipe
 		Build  string
@@ -406,7 +418,8 @@ func (e *Engine) Evaluate(ctx context.Context, recipe Recipe, parent string, pro
 			Domain       Domain
 			Seed         uint64
 			Inputs       map[string]string
-		}{e.Build, e.CodecVersion, node, p.Domain, seed, upstream})
+			Source       *ConditionedSource `json:",omitempty"`
+		}{e.Build, e.CodecVersion, node, p.Domain, seed, upstream, p.Source})
 		reg := e.Registry.entries[node.Operator]
 		validate := func(o Outputs) error {
 			if len(o) != len(reg.desc.Outputs) {
@@ -432,6 +445,9 @@ func (e *Engine) Evaluate(ctx context.Context, recipe Recipe, parent string, pro
 			op, err := reg.factory(node.Params)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", node.ID, err)
+			}
+			if binder, ok := op.(SourceOperator); ok {
+				op = binder.BindSource(p.Source, sourceGLB)
 			}
 			out, err = op.Run(ctx, p.Domain, seed, inputs)
 			if err != nil {
@@ -460,6 +476,13 @@ func (e *Engine) Evaluate(ctx context.Context, recipe Recipe, parent string, pro
 	if err != nil {
 		return nil, err
 	}
+	if p.Source != nil {
+		failures, constraintErr := ValidateConditioned(ctx, p.Source.Spec, selected["reference_volume"].Volume, selected["volume"].Volume, selected["mesh"].Mesh)
+		if constraintErr != nil {
+			return nil, constraintErr
+		}
+		candidate.Problems = append(candidate.Problems, failures...)
+	}
 	candidate.Valid = len(candidate.Problems) == 0
 	candidate.Milliseconds = time.Since(start).Milliseconds()
 	if err = ctx.Err(); err != nil {
@@ -476,7 +499,7 @@ func (e *Engine) Evaluate(ctx context.Context, recipe Recipe, parent string, pro
 	}
 	dir := filepath.Join(e.Workspace, "candidates", id)
 	if candidate.Valid {
-		glb, err := EncodeGLB(selected["mesh"].Mesh)
+		glb, err := EncodeCandidateGLB(selected["mesh"].Mesh, candidate)
 		if err != nil {
 			return nil, err
 		}
@@ -593,6 +616,18 @@ func (e *Engine) Export(ctx context.Context, id string, w io.Writer) error {
 	}
 	if err = add("asset.glb", glb); err != nil {
 		return err
+	}
+	if c.Recipe.Source != nil {
+		source, sidecar, err := e.sourceBytes(c.Recipe.Source)
+		if err != nil {
+			return err
+		}
+		if err = add("source/archetype.glb", source); err != nil {
+			return err
+		}
+		if err = add("source/constraints.json", sidecar); err != nil {
+			return err
+		}
 	}
 	for name, v := range map[string]any{"candidate.json": c, "recipe.json": c.Recipe} {
 		b, _ := json.MarshalIndent(v, "", "  ")

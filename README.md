@@ -220,3 +220,114 @@ A lightweight GitHub Actions job builds the browser bundle and runs `go test ./.
 ### Per-candidate geometry complexity limits
 
 The mesher still enforces a hard **two-million-triangle** ceiling. If a candidate would exceed it, the candidate is **skipped** rather than terminating the whole generation batch or MAP-Elites search. Progress counts attempted candidates, including skips. Completed jobs report `skipped` and `failures` (zero-based candidate index, failure reason, and exact recipe); the run manifest persists the same information so an over-budget recipe can be reproduced at a lower resolution. Skipped candidates do not enter the gallery or MAP-Elites archive. CLI commands return only successful candidates and report skips to stderr. Other errors (including I/O, validation, and cancellation) remain fatal. This does **not** silently lower resolution or increase the mesh triangle cap; the generated geometry and its measurements remain reproducible.
+
+## Structure-conditioned bridge experiment
+
+The `bridge` preset implements the decoration milestone of #13. A coarse GLB
+reference supplies retained geometry; a version 1 semantic sidecar defines required
+solid, forbidden clearance, editable regions, endpoint anchors, a straight horizontal
+traversal strip and budgets. The recipe replaces editable side material using the
+existing TPMS, Voronoi, CSG and warp operators, then meshes the constrained volume.
+Support invention and conditioned MAP-Elites search remain separate milestones;
+conditioned search requests are explicitly rejected. Existing atlas descriptors,
+keep/reject behavior and unconstrained presets retain their contracts.
+
+```sh
+# Rebuild the deterministic reference fixture (optional).
+python3 scripts/make-bridge-fixture.py
+go run ./cmd/progen recipe --preset bridge > examples/bridge.json
+
+# The checked-in examples/bridge.json recipe and --preset bridge use the same fixture.
+# First candidate uses exact settings;
+# later candidates sample the sidecar's permitted parameter ranges.
+go run ./cmd/progen generate --recipe examples/bridge.json --resolution 32 --seed 42 \
+  --count 2 --search-seed 12 --workspace .progen
+# Repeat at 64³; keep candidates first if using studio batches.
+go run ./cmd/progen generate --preset bridge --resolution 64 --seed 314159 \
+  --count 2 --search-seed 12 --workspace .progen
+
+# Import your GLB + sidecar and save the normalized recipe for repeatable use.
+go run ./cmd/progen import --archetype examples/bridge.glb \
+  --constraints examples/bridge.constraints.json --workspace .progen > bridge-recipe.json
+go run ./cmd/progen generate --recipe bridge-recipe.json --count 2 \
+  --search-seed 12 --workspace .progen
+go run ./cmd/progen export --id CANDIDATE_ID --out bridge.zip --workspace .progen
+```
+
+In the studio, select **Bridge / constrained decoration** to preview the normalized
+reference, or open **Bridge archetype import**, choose both files, and import.
+Import preserves the recipe's starting parameters. **Randomize all attributes** and
+batch variation honor `parameter_bounds` in the sidecar. These bounds can narrow or
+freeze any registered numeric parameter by node ID; the compiler rejects unknown
+nodes, parameters or ranges outside their operator contracts. The fixture freezes
+CSG union and the outer envelope so randomization remains a useful decoration
+experiment. Choose 32³ or 64³, generate a batch, then use **Generated result**,
+**Reference archetype** or **Overlay reference**. The inspector shows constraint
+failures and disables exports for invalid candidates. Invalid meshes still preview.
+Keep specimens before starting another studio batch; unkept results are deleted as
+before. Valid candidates download as GLB or a complete source ZIP.
+
+The supplied reference is three outward-oriented box shells (deck and two coarse
+side regions), reproducible without Blender. Blender exports should use the same
+restricted subset: one scene, static indexed triangle primitives, embedded BIN,
+FLOAT VEC3 positions and unsigned 8/16/32-bit indices. Positive affine node matrices
+or TRS, including normalized quaternion rotations, are applied before the sidecar's
+positive `transform.scale` and `translation`. Scale converts source coordinates into
+meters; constraints themselves are already in right-handed Y-up meter coordinates.
+Reflections, singular transforms, external/data URIs, animations, skins, morphs,
+sparse accessors and extensions are rejected. Import caps are 8 MiB GLB, 64 KiB
+sidecar, 8192 vertices, 4096 triangles, 64 shells and 512 convex face planes.
+
+Each connected shell must be closed, consistently outward oriented, convex and have
+sphere topology. Exact position welding handles split normals/UV seams; import
+performs no approximate welding or repair. Overlapping shells are interpreted as a
+union. Decompose concave parts into closed convex shells in the authoring tool.
+Unsupported/open/nonmanifold geometry fails explicitly. The volume adapter uses a
+union of convex half-space fields: **negative means interior; values are not exact
+signed distances**. Rebuilding or resolution changes can alter sampled geometry.
+Thin regions with no interior samples fail explicitly. Features below the grid
+spacing can disappear, even where another part of the archetype remains resolved.
+
+Validity independently checks required solids, endpoint attachment zones, changes
+outside editable masks, forbidden occupancy, triangle intersections with forbidden
+boxes, and supported upward-facing deck surfaces plus headroom along the declared
+strip. Headroom triangles are checked in the oriented traversal corridor as well
+as through volume probes. These checks are bounded by grid resolution and an
+explicit `surface_tolerance` (0.1 m in the fixture), with half-grid traversal probes.
+Curved/sloping paths are unsupported. A connected mesh or occupied voxel component
+is not proof of traversal. These checks certify neither game navigation/collision
+behavior nor real-world load-bearing structural safety.
+
+Exact source GLB and sidecar bytes are stored as SHA-256-addressed files in
+`sources/`, checked on reload, and participate in recipe/candidate/family/node cache
+identity alongside operator versions and existing executable provenance. Parsed
+semantics must match the fingerprinted sidecar. Imported sources form a persistent
+asset library capped at 64 MiB; they survive generation cleanup/purge like external
+recipes. Import fails at the cap. To reclaim space, stop writers and remove only
+source pairs you no longer need, after exporting candidates that reference them.
+The fixture is embedded and needs no source files on disk. Candidate ZIPs contain
+exact `source/archetype.glb`, `source/constraints.json`, recipe/candidate manifests
+and selected artifacts. Reimport that pair into a fresh workspace before loading
+the exported `recipe.json`. Direct GLBs also embed recipe, source fingerprints,
+versions, parameters, seed and build identity in `extras.progen`; they do not embed
+the original source bytes. Deterministic replay uses the same executable/platform,
+as with existing recipes.
+
+Sidecar `max_candidates` is checked before a job starts. `max_triangles` failures
+retain inspectable invalid candidates and explicit reasons, while the existing
+hard two-million-triangle overflow still skips only that candidate. Inputs and
+artifacts stay immutable, cancellation retains completed candidates, and import/
+volume/traversal work checks cancellation. Functional validity does not assert
+visual novelty or guarantee that every random combination is attractive.
+
+Additional checks:
+
+```sh
+go test -run 'TestBridge|TestArchetype|TestConstraint|TestConditioned' ./...
+node scripts/browser-bridge-test.mjs
+node scripts/browser-implicit-test.mjs
+```
+
+The bridge Chromium check saves rendered reference/result/overlay views at both
+resolutions, mobile/desktop screenshots, a GLB validated with Khronos tooling, a
+source ZIP and a complete `evidence.json` under its reported temporary workspace.
