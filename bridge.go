@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -137,7 +138,7 @@ func (e *Engine) sourceBytes(s *ConditionedSource) ([]byte, []byte, error) {
 	if s == nil {
 		return nil, nil, fmt.Errorf("missing archetype source")
 	}
-	read := func(digest, ext string, builtin []byte) ([]byte, error) {
+	read := func(digest, ext string, builtin []byte, limit int64) ([]byte, error) {
 		if !safeID(digest) {
 			return nil, fmt.Errorf("invalid source fingerprint")
 		}
@@ -146,21 +147,33 @@ func (e *Engine) sourceBytes(s *ConditionedSource) ([]byte, []byte, error) {
 		if sourceDigest(builtin) == digest {
 			b = builtin
 		} else {
-			b, err = os.ReadFile(filepath.Join(e.Workspace, "sources", digest+ext))
+			f, openErr := os.Open(filepath.Join(e.Workspace, "sources", digest+ext))
+			if openErr != nil {
+				err = openErr
+			} else {
+				b, err = io.ReadAll(io.LimitReader(f, limit+1))
+				closeErr := f.Close()
+				if err == nil {
+					err = closeErr
+				}
+			}
 		}
 		if err != nil {
 			return nil, fmt.Errorf("source %s%s unavailable: import the original GLB + sidecar into this workspace: %w", digest, ext, err)
 		}
-		if len(b) > 8<<20 || sourceDigest(b) != digest {
+		if int64(len(b)) > limit {
+			return nil, fmt.Errorf("source %s exceeds %d-byte reload limit", digest, limit)
+		}
+		if sourceDigest(b) != digest {
 			return nil, fmt.Errorf("source fingerprint mismatch: %s", digest)
 		}
 		return b, nil
 	}
-	glb, err := read(s.GLBSHA256, ".glb", bridgeGLB)
+	glb, err := read(s.GLBSHA256, ".glb", bridgeGLB, 8<<20)
 	if err != nil {
 		return nil, nil, err
 	}
-	sidecar, err := read(s.SidecarSHA256, ".json", bridgeSidecar)
+	sidecar, err := read(s.SidecarSHA256, ".json", bridgeSidecar, 64<<10)
 	if err != nil {
 		return nil, nil, err
 	}
