@@ -382,7 +382,7 @@ async function pollJob() {
   if (!activeJob) return;
   const j = await api("jobs/" + activeJob);
   $("jobState").textContent = j.status.toUpperCase();
-  $("jobProgress").textContent = `${j.completed}/${j.total} \xB7 ${j.stage || j.request.kind}`;
+  $("jobProgress").textContent = `${j.completed}/${j.total} \xB7 ${j.stage || j.request.kind}${j.skipped ? ` \xB7 ${j.skipped} skipped` : ""}`;
   $("progress").max = j.total;
   $("progress").value = j.completed;
   const running = ["queued", "running"].includes(j.status);
@@ -393,6 +393,10 @@ async function pollJob() {
     activeJob = null;
     await refresh();
     if (j.error) showError(new Error(j.error));
+    if (j.failures?.length) {
+      const first = j.failures[0];
+      $("reviewStatus").textContent = `Batch finished: ${j.candidates.length} generated, ${j.failures.length} skipped. Candidate ${first.index + 1}: ${first.reason}`;
+    }
     if (j.candidates?.length) {
       const c = candidates.find((c2) => c2.id === j.candidates[0]);
       if (c) await select(c);

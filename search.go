@@ -306,7 +306,7 @@ func (e *Engine) Prepare(req RunRequest) (RunRequest, Recipe, error) {
 	p, _, err := e.Registry.Compile(r)
 	return req, p, err
 }
-func (e *Engine) run(ctx context.Context, request RunRequest, progress func(int, int, string)) ([]*Candidate, error) {
+func (e *Engine) run(ctx context.Context, request RunRequest, progress func(int, int, string), onSkip func(int, Recipe, error)) ([]*Candidate, error) {
 	req, base, err := e.Prepare(request)
 	if err != nil {
 		return nil, err
@@ -345,6 +345,11 @@ func (e *Engine) run(ctx context.Context, request RunRequest, progress func(int,
 				}
 			})
 			if err != nil {
+				if errors.Is(err, ErrMeshTriangleLimit) {
+					if onSkip != nil { onSkip(i, r, err) }
+					if progress != nil { progress(i+1, req.Count, "skipped") }
+					continue
+				}
 				return out, err
 			}
 			out = append(out, c)
@@ -386,17 +391,21 @@ func (e *Engine) run(ctx context.Context, request RunRequest, progress func(int,
 					}
 				})
 				mu.Lock()
-				if err != nil {
+				if err != nil && !errors.Is(err, ErrMeshTriangleLimit) {
 					if first == nil {
 						first = err
 						cancel()
 					}
 				} else {
-					out[i] = c
-					completed++
-					if progress != nil {
-						progress(completed, req.Count, "completed")
+					stage := "completed"
+					if err != nil {
+						stage = "skipped"
+						if onSkip != nil { onSkip(i, recipes[i], err) }
+					} else {
+						out[i] = c
 					}
+					completed++
+					if progress != nil { progress(completed, req.Count, stage) }
 				}
 				mu.Unlock()
 			}
@@ -421,7 +430,19 @@ send:
 	if err = e.PersistArchive(base); err != nil {
 		return out, err
 	}
-	return out, nil
+	// Return surviving candidates in request order. A rejected specimen has no
+	// mesh to preview, and must not appear as a nil entry in the CLI output.
+	survivors := make([]*Candidate, 0, len(out))
+	for _, c := range out { if c != nil { survivors = append(survivors, c) } }
+	return survivors, nil
+}
+
+// CandidateFailure retains enough information to reproduce an oversized
+// specimen without polluting the candidate atlas with an unusable GLB.
+type CandidateFailure struct {
+ Index int `json:"index"`
+ Reason string `json:"reason"`
+ Recipe Recipe `json:"recipe"`
 }
 
 // RunRecord records parameter-search randomness separately from generation seeds.
@@ -432,30 +453,39 @@ type RunRecord struct {
 	Status         string     `json:"status"`
 	Created        time.Time  `json:"created"`
 	Finished       time.Time  `json:"finished,omitempty"`
-	Candidates     []string   `json:"candidates"`
-	Error          string     `json:"error,omitempty"`
+	Candidates     []string           `json:"candidates"`
+	Failures       []CandidateFailure `json:"failures,omitempty"`
+	Error          string             `json:"error,omitempty"`
 }
 
 // Run generates an ordered batch or runs sequential MAP-Elites. Callbacks must
 // return promptly; registration and engine configuration must finish before Run.
-func (e *Engine) Run(ctx context.Context, request RunRequest, progress func(int, int, string)) (results []*Candidate, runErr error) {
+func (e *Engine) Run(ctx context.Context, request RunRequest, progress func(int, int, string)) ([]*Candidate, error) {
+ results, _, err := e.RunWithFailures(ctx, request, progress)
+ return results, err
+}
+
+// RunWithFailures reports candidate-local budget rejections separately from
+// fatal storage/configuration errors and explicit cancellation.
+func (e *Engine) RunWithFailures(ctx context.Context, request RunRequest, progress func(int, int, string)) (results []*Candidate, failures []CandidateFailure, runErr error) {
 	req, recipe, err := e.Prepare(request)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Recipe = &recipe
 	archive, err := e.Archive(recipe)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	record := RunRecord{Request: req, InitialArchive: archive, Status: "running", Created: time.Now().UTC(), Candidates: []string{}}
 	record.ID = hash(record)
 	path := filepath.Join(e.Workspace, "runs", record.ID+".json")
 	if err = writeJSON(path, record); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() {
 		record.Finished = time.Now().UTC()
+		record.Failures = failures
 		record.Status = "completed"
 		if runErr != nil {
 			record.Status = "failed"
@@ -473,5 +503,10 @@ func (e *Engine) Run(ctx context.Context, request RunRequest, progress func(int,
 			runErr = err
 		}
 	}()
-	return e.run(ctx, req, progress)
+	results, runErr = e.run(ctx, req, progress, func(index int, recipe Recipe, err error) {
+		failures = append(failures, CandidateFailure{Index: index, Reason: err.Error(), Recipe: recipe})
+	})
+	// Workers may finish in a different order; manifest failures remain stable.
+	sort.Slice(failures, func(i,j int) bool { return failures[i].Index < failures[j].Index })
+	return results, failures, runErr
 }

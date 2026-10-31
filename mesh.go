@@ -5,9 +5,15 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 )
+
+// ErrMeshTriangleLimit is a candidate-local complexity rejection, not a fatal batch error.
+var ErrMeshTriangleLimit = errors.New("mesh exceeds two million triangles")
+
+const maxMeshTriangles = 2_000_000
 
 type Tetrahedra struct{}
 
@@ -103,9 +109,11 @@ func (Tetrahedra) Mesh(ctx context.Context, v Volume) (*Mesh, error) {
 						triangle(ac, ae, be)
 						triangle(ac, be, bc)
 					}
-				}
-				if len(m.Indices) > 6000000 {
-					return nil, fmt.Errorf("mesh exceeds two million triangles")
+					// Stop as soon as the budget is exceeded instead of constructing
+					// the rest of an already unusable mesh.
+					if len(m.Indices) > maxMeshTriangles*3 {
+						return nil, ErrMeshTriangleLimit
+					}
 				}
 			}
 		}
