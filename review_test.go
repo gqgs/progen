@@ -139,13 +139,20 @@ func TestSpecimenA0477AFreshAndCachedMesh(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := testEngine(t)
-	for attempt := 0; attempt < 2; attempt++ {
+	cleanMeshHash := ""
+	for attempt := 0; attempt < 3; attempt++ {
 		c, err := e.Evaluate(context.Background(), recipe, "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !c.Valid {
 			t.Fatalf("attempt %d: %v", attempt, c.Problems)
+		}
+		if attempt == 0 {
+			cleanMeshHash = c.Artifacts["mesh"].Hash
+		}
+		if c.Artifacts["mesh"].Hash != cleanMeshHash {
+			t.Fatal("cache repair changed the regenerated mesh")
 		}
 		if c.Metrics.Vertices != 37562 || c.Metrics.Triangles != 75220 {
 			t.Fatalf("recipe geometry changed: %+v", c.Metrics)
@@ -161,8 +168,37 @@ func TestSpecimenA0477AFreshAndCachedMesh(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, node := range c.Nodes {
-			if node.ID == "surface" && node.Cached != (attempt == 1) {
+			if node.ID == "surface" && node.Cached != (attempt == 2) {
 				t.Fatal("unexpected cache state")
+			}
+		}
+		if attempt == 0 {
+			// Replay the 118 actual damaged indices from the uploaded artifact.
+			// Positions and normals matched regeneration exactly.
+			raw, err := os.ReadFile("testdata/a0477a-corrupt-indices.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var damaged [][2]uint32
+			if err := json.Unmarshal(raw, &damaged); err != nil {
+				t.Fatal(err)
+			}
+			if len(damaged) != 118 {
+				t.Fatal("incomplete corruption fixture")
+			}
+			ref := c.Artifacts["mesh"]
+			out, err := e.readCache(ref.Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, change := range damaged {
+				out[ref.Port].Mesh.Indices[change[0]] = change[1]
+			}
+			if err := ValidateMesh(out[ref.Port].Mesh, c.Recipe.Domain); err == nil {
+				t.Fatal("actual corrupt indices accepted")
+			}
+			if err := e.writeCache(ref.Key, out); err != nil {
+				t.Fatal(err)
 			}
 		}
 	}
