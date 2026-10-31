@@ -30,6 +30,7 @@ type Job struct {
 	Request    RunRequest `json:"request"`
 	Status     string     `json:"status"`
 	Completed  int        `json:"completed"`
+	Skipped    int        `json:"skipped"`
 	Total      int        `json:"total"`
 	Stage      string     `json:"stage"`
 	Candidates []string   `json:"candidates"`
@@ -472,6 +473,7 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			j.Completed = done
+			if node == "skipped" { j.Skipped++ }
 			j.Total = total
 			j.Stage = node
 		})
@@ -479,6 +481,7 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request) {
 		defer s.mu.Unlock()
 		j.Status = "completed"
 		j.Failures = failures
+		j.Skipped = len(failures)
 		if runErr != nil {
 			j.Status = "failed"
 			j.Error = runErr.Error()
