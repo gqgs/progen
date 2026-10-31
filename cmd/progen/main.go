@@ -50,6 +50,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		recipe = progen.Recipe{}
 		if err := json.Unmarshal(b, &recipe); err != nil {
 			return err
 		}

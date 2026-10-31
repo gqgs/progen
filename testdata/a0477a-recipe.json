@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "name": "Eigenmode branching",
+  "domain": {
+    "bounds": {
+      "Min": {
+        "X": -1,
+        "Y": -1,
+        "Z": -1
+      },
+      "Max": {
+        "X": 1,
+        "Y": 1,
+        "Z": 1
+      }
+    },
+    "resolution": 96,
+    "frame": "right-handed-y-up",
+    "units": "meters",
+    "boundary": "dirichlet"
+  },
+  "seed": "42",
+  "nodes": [
+    {
+      "id": "field",
+      "operator": "eigenmode",
+      "version": "1",
+      "params": {
+        "order": 3,
+        "weight": 1
+      }
+    },
+    {
+      "id": "growth",
+      "operator": "branching",
+      "version": "1",
+      "params": {
+        "attractions": 92,
+        "guidance": 0.12380159918659694,
+        "influence": 0.8019733343178965,
+        "iterations": 120,
+        "kill": 0.09,
+        "max_vertices": 1400,
+        "radius": 0.02,
+        "step": 0.11963771732980621
+      },
+      "inputs": {
+        "direction": {
+          "node": "guide",
+          "port": "direction"
+        }
+      }
+    },
+    {
+      "id": "guide",
+      "operator": "gradient",
+      "version": "1",
+      "inputs": {
+        "field": {
+          "node": "field",
+          "port": "field"
+        }
+      }
+    },
+    {
+      "id": "pores",
+      "operator": "porous",
+      "version": "1",
+      "params": {
+        "amount": 0.0543288782198962,
+        "frequency": 4.919453165135607
+      },
+      "inputs": {
+        "volume": {
+          "node": "solid",
+          "port": "volume"
+        }
+      }
+    },
+    {
+      "id": "solid",
+      "operator": "solidify",
+      "version": "1",
+      "inputs": {
+        "graph": {
+          "node": "growth",
+          "port": "graph"
+        }
+      }
+    },
+    {
+      "id": "surface",
+      "operator": "mesh",
+      "version": "1",
+      "inputs": {
+        "volume": {
+          "node": "pores",
+          "port": "volume"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "base": {
+      "node": "solid",
+      "port": "volume"
+    },
+    "direction": {
+      "node": "guide",
+      "port": "direction"
+    },
+    "field": {
+      "node": "field",
+      "port": "field"
+    },
+    "graph": {
+      "node": "growth",
+      "port": "graph"
+    },
+    "mesh": {
+      "node": "surface",
+      "port": "mesh"
+    },
+    "volume": {
+      "node": "pores",
+      "port": "volume"
+    }
+  }
+}
