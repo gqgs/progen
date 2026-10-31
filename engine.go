@@ -330,11 +330,7 @@ func validateArtifact(a Artifact, d Domain) error {
 		if a.Mesh == nil {
 			return fmt.Errorf("missing mesh")
 		}
-		for _, p := range a.Mesh.Positions {
-			if !p.Finite() {
-				return fmt.Errorf("non-finite mesh")
-			}
-		}
+		return validateMeshStructure(a.Mesh, d)
 	default:
 		return fmt.Errorf("unsupported artifact kind %s", a.Kind)
 	}

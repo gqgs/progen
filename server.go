@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"embed"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
+	mathrand "math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
@@ -125,6 +128,77 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		respond(w, 200, p)
+	})
+	mux.HandleFunc("POST /api/recipe/randomize", func(w http.ResponseWriter, r *http.Request) {
+		var recipe Recipe
+		if err := decode(w, r, &recipe); err != nil {
+			problem(w, 400, err)
+			return
+		}
+		p, _, err := s.Engine.Registry.Compile(recipe)
+		if err != nil {
+			problem(w, 400, err)
+			return
+		}
+		var entropy [16]byte
+		if _, err := rand.Read(entropy[:]); err != nil {
+			problem(w, 500, err)
+			return
+		}
+		rng := mathrand.New(mathrand.NewPCG(binary.LittleEndian.Uint64(entropy[:8]), binary.LittleEndian.Uint64(entropy[8:])))
+		p.Seed = Seed(rng.Uint64())
+		for i, node := range p.Nodes {
+			for key, schema := range s.Engine.Registry.entries[node.Operator].desc.Parameters {
+				value := schema.Min + rng.Float64()*(schema.Max-schema.Min)
+				if schema.Type == "integer" {
+					value = schema.Min + float64(rng.IntN(int(schema.Max-schema.Min)+1))
+					value = math.Round(value)
+				}
+				p.Nodes[i].Params[key] = value
+			}
+		}
+		p.Domain.Resolution = []int{32, 64, 96, 128}[rng.IntN(4)]
+		p, _, err = s.Engine.Registry.Compile(p)
+		if err != nil {
+			problem(w, 400, err)
+			return
+		}
+		respond(w, 200, p)
+	})
+	mux.HandleFunc("POST /api/candidates/reject-unkept", func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if len(s.cancels) > 0 {
+			problem(w, 409, fmt.Errorf("wait for active jobs before bulk rejection"))
+			return
+		}
+		count, err := s.Engine.RejectUnkept(nil)
+		if err != nil {
+			problem(w, 500, err)
+			return
+		}
+		respond(w, 200, map[string]int{"rejected": count})
+	})
+	mux.HandleFunc("DELETE /api/generations", func(w http.ResponseWriter, r *http.Request) {
+		var confirmation struct {
+			Confirm string `json:"confirm"`
+		}
+		if err := decode(w, r, &confirmation); err != nil || confirmation.Confirm != "purge-all-generations" {
+			problem(w, 400, fmt.Errorf("explicit purge confirmation required"))
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if len(s.cancels) > 0 {
+			problem(w, 409, fmt.Errorf("cancel or finish active jobs before purging"))
+			return
+		}
+		if err := s.Engine.Purge(); err != nil {
+			problem(w, 500, err)
+			return
+		}
+		s.jobs = map[string]*Job{}
+		respond(w, 200, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("GET /api/candidates", func(w http.ResponseWriter, r *http.Request) {
 		c, err := s.Engine.List()
@@ -325,6 +399,17 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request) {
 			j.Total = total
 			j.Stage = node
 		})
+		// Search may use provisional elites while running. Once complete, only
+		// explicitly kept specimens remain eligible for future exploration.
+		ids := []string{}
+		for _, c := range results {
+			if c != nil {
+				ids = append(ids, c.ID)
+			}
+		}
+		if _, err := s.Engine.RejectUnkept(ids); err != nil && runErr == nil {
+			runErr = err
+		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		j.Status = "completed"
