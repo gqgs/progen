@@ -57,6 +57,20 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll(".card img")].filter((i) => i.src.startsWith("data:")).length >= 1);
   const initial = await (await fetch(base + "/api/candidates")).json();
   assert.equal(initial.length, 2);
+  // A single reconciliation must remove every stale sibling, without relying
+  // on another stream event or browser reload to finish cleanup.
+  const remainingStale = await page.evaluate(() => {
+    const gallery = document.querySelector("#gallery");
+    for (let i = 0; i < 8; i++) {
+      const stale = gallery.firstElementChild.cloneNode(true);
+      stale.dataset.id = `stale-${i}`;
+      gallery.append(stale);
+    }
+    document.querySelector("#filter").dispatchEvent(new Event("change"));
+    return gallery.querySelectorAll('[data-id^="stale-"]').length;
+  });
+  assert.equal(remainingStale, 0, "one reconciliation must remove all stale cards");
+
   assert.ok(initial.every((c) => c.feedback === "neutral"), "new batches remain reviewable");
   assert.equal(initial[0].recipe.seed, "18446744073709551615");
   const first = await page.locator(".card.selected").getAttribute("data-id");
@@ -118,6 +132,7 @@ try {
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#purge").click();
   await page.waitForFunction(() => document.querySelector("#candidateCount").textContent === "0");
+  assert.equal(await page.locator(".card").count(), 0, "purge must remove every card");
   assert.equal(await page.locator("#favorite").isDisabled(), true);
   assert.equal(await page.locator("#downloadGLB").getAttribute("href"), null);
   assert.equal((await (await fetch(base + "/api/jobs")).json()).length, 0);
