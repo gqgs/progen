@@ -210,3 +210,9 @@ The engine requires `mesh`, `base`, and `volume` outputs for default candidate v
 ### Implicit volume composition
 
 The `csg` operator combines two `volume/solid` inputs (mode 0: union, 1: intersection, 2: difference A\\B, 3: smooth union with a tunable blend). The `warp` modifier distorts an upstream volume by sampling a smooth 3D coordinate deformation. The `Hybrid / composition` preset combines a TPMS and a Voronoi foam, deforms the result and meshes it. Ports are typed and the recipe remains an acyclic DAG. Blending operates in the units of sampled implicit fields, not true signed distances; the apparent blend radius therefore depends on source scaling. Neither modifier mutates upstream artifacts.
+
+### Family-aware MAP-Elites descriptors
+
+Graph-producing recipes retain the exact `morphology-v2` axes (scaled branch-point fraction and removed-volume fraction), including versioned historical compatibility. Recipes without an exported `graph` now use `implicit-morphology-v1`: horizontal axis is **occupied voxel fraction** (occupied samples / all domain samples), and vertical axis is **exposed voxel-face fraction** (occupied faces adjacent to empty/out-of-bounds samples / 6 × occupied samples). Both are in [0,1]. These descriptors capture volume and relative surface complexity, not visual novelty or true topology. They depend on grid resolution; compare archives at a fixed resolution. Existing favorite, validity and connected-solid rules still apply. Explicit custom `Engine.Descriptors` continue to override the family default. Earlier generated records will not acquire new metrics merely by rebuilding an archive: regenerate legacy graph-free candidates to measure the new values.
+
+A lightweight GitHub Actions job builds the browser bundle and runs `go test ./...` plus `go vet ./...` for pull requests.

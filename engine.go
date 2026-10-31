@@ -50,6 +50,8 @@ type Metrics struct {
 	// For a valid rooted tree it is in [0, .5); descriptor scaling is separate.
 	BranchFraction    float64 `json:"branch_fraction"`
 	Porosity          float64 `json:"porosity"`
+	SolidFraction     float64 `json:"solid_fraction"`
+	SurfaceFraction   float64 `json:"surface_fraction"`
 	ConnectedFraction float64 `json:"connected_fraction"`
 	Coverage          float64 `json:"coverage"`
 	Vertices          int     `json:"vertices"`
@@ -134,6 +136,25 @@ func (DefaultEvaluator) Evaluate(ctx context.Context, r Recipe, out map[string]A
 	if count == 0 {
 		problems = append(problems, "empty solid")
 	}
+	m.SolidFraction = float64(count) / float64(len(v.Values))
+	if count > 0 {
+		// Fraction of occupied voxel faces exposed to empty neighbors.
+		// This is a resolution-dependent geometric proxy, not exact mesh area.
+		exposed := 0
+		for i, value := range v.Values {
+			if value >= 0 { continue }
+			x,y,z := i%n,(i/n)%n,i/(n*n)
+			for _,p := range [][3]int{{x-1,y,z},{x+1,y,z},{x,y-1,z},{x,y+1,z},{x,y,z-1},{x,y,z+1}} {
+				if p[0]<0 || p[1]<0 || p[2]<0 || p[0]>=n || p[1]>=n || p[2]>=n {
+					exposed++; continue
+				}
+				j:=p[0]+n*(p[1]+n*p[2])
+				if v.Values[j]>=0 { exposed++ }
+			}
+		}
+		m.SurfaceFraction = float64(exposed) / (6*float64(count))
+	}
+
 	if original > 0 {
 		m.Porosity = 1 - float64(count)/float64(original)
 	}

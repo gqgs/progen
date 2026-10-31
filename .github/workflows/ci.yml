@@ -1,0 +1,28 @@
+name: Verify Progen
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check web/dist/app.js
+      - run: npm run build
+      - run: go test ./...
+      - run: go vet ./...
+      - run: go build -o /tmp/progen-mvp ./cmd/progen
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/browser-implicit-test.mjs
