@@ -134,7 +134,8 @@ async function drawGallery() {
   $("candidateCount").textContent = candidates.length;
   $("empty").classList.toggle("hidden", candidates.length > 0);
   const visible = new Set(list.map(c => c.id));
-  for (const card of $("gallery").children) if (!visible.has(card.dataset.id)) card.remove();
+  // Snapshot the live HTMLCollection: removing while iterating it skips siblings.
+  for (const card of [...$("gallery").children]) if (!visible.has(card.dataset.id)) card.remove();
   for (const c of list) {
     const existing = $("gallery").querySelector(`[data-id="${c.id}"]`);
     if (existing) {
