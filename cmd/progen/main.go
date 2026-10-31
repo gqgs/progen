@@ -72,10 +72,11 @@ func run() error {
 	case "operators":
 		return printJSON(e.Registry.Descriptors())
 	case "generate", "vary", "search":
-		results, err := e.Run(ctx, progen.RunRequest{Kind: command, Recipe: &recipe, Parent: *parent, Count: *count, Scale: *scale, SearchSeed: progen.Seed(*searchSeed), Workers: *workers}, nil)
+		results, failures, err := e.RunWithFailures(ctx, progen.RunRequest{Kind: command, Recipe: &recipe, Parent: *parent, Count: *count, Scale: *scale, SearchSeed: progen.Seed(*searchSeed), Workers: *workers}, nil)
 		if err != nil {
 			return err
 		}
+		for _, failure := range failures { fmt.Fprintf(os.Stderr, "candidate %d skipped: %s\\n", failure.Index+1, failure.Reason) }
 		return printJSON(results)
 	case "export":
 		f, err := os.Create(*out)
