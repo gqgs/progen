@@ -76,7 +76,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		for _, failure := range failures { fmt.Fprintf(os.Stderr, "candidate %d skipped: %s\\n", failure.Index+1, failure.Reason) }
+		for _, failure := range failures { fmt.Fprintf(os.Stderr, "candidate %d skipped: %s\n", failure.Index+1, failure.Reason) }
 		return printJSON(results)
 	case "export":
 		f, err := os.Create(*out)
