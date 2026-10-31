@@ -153,6 +153,26 @@ func Builtins() *Registry {
 			return Outputs{"volume":{Kind:"volume",Volume:v}},e
 		}),nil
 	})
+	add("csg",map[string]Port{"a":volume,"b":volume},map[string]Port{"volume":volume},map[string]Param{
+		"mode":parameter(0,0,3,true,true),
+		"blend":parameter(.12,0,.5,false,true),
+	},func(p map[string]float64)(Operator,error){
+		op:=CSG{int(p["mode"]),p["blend"]}
+		return OperatorFunc(func(c context.Context,_ Domain,_ uint64,i Inputs)(Outputs,error){
+			v,e:=op.Combine(c,i["a"].Volume,i["b"].Volume)
+			return Outputs{"volume":{Kind:"volume",Volume:v}},e
+		}),nil
+	})
+	add("warp",map[string]Port{"volume":volume},map[string]Port{"volume":volume},map[string]Param{
+		"amplitude":parameter(.08,0,.3,false,true),
+		"frequency":parameter(1.6,.5,5,false,true),
+	},func(p map[string]float64)(Operator,error){
+		op:=VolumeWarp{p["amplitude"],p["frequency"]}
+		return OperatorFunc(func(c context.Context,_ Domain,_ uint64,i Inputs)(Outputs,error){
+			v,e:=op.Modify(c,i["volume"].Volume)
+			return Outputs{"volume":{Kind:"volume",Volume:v}},e
+		}),nil
+	})
 	return r
 }
 
@@ -327,10 +347,35 @@ func ImplicitRecipe(operator string) Recipe {
  }
  return r
 }
+// HybridRecipe combines independent implicit generators without a graph.
+func HybridRecipe() Recipe {
+ r:=DefaultRecipe()
+ r.Name="Hybrid implicit composition"
+ r.Nodes=[]Node{
+  {ID:"periodic",Operator:"tpms",Version:"1"},
+  {ID:"cells",Operator:"voronoi_foam",Version:"1"},
+  {ID:"combine",Operator:"csg",Version:"1",Inputs:map[string]Reference{
+   "a":{Node:"periodic",Port:"volume"},"b":{Node:"cells",Port:"volume"},
+  }},
+  {ID:"deform",Operator:"warp",Version:"1",Inputs:map[string]Reference{
+   "volume":{Node:"combine",Port:"volume"},
+  }},
+  {ID:"surface",Operator:"mesh",Version:"1",Inputs:map[string]Reference{
+   "volume":{Node:"deform",Port:"volume"},
+  }},
+ }
+ r.Outputs=map[string]Reference{
+  "mesh":{Node:"surface",Port:"mesh"},
+  "base":{Node:"deform",Port:"volume"},
+  "volume":{Node:"deform",Port:"volume"},
+ }
+ return r
+}
 func RecipePresets() []RecipePreset {
  return []RecipePreset{
   {ID:"branching",Name:"Branching / coral",Recipe:DefaultRecipe()},
   {ID:"tpms",Name:"TPMS / periodic surfaces",Recipe:ImplicitRecipe("tpms")},
   {ID:"voronoi",Name:"Voronoi / cellular foam",Recipe:ImplicitRecipe("voronoi_foam")},
+  {ID:"hybrid",Name:"Hybrid / composition",Recipe:HybridRecipe()},
  }
 }

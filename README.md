@@ -206,3 +206,7 @@ The engine requires `mesh`, `base`, and `volume` outputs for default candidate v
 ### Implicit geometry presets
 
 **TPMS / periodic surfaces** generates finite thickened level sets of gyroid, Schwarz-P or diamond functions. Controls: surface, frequency, thickness, phase, warp and spherical envelope. **Voronoi / cellular foam** generates thick interfaces between deterministic seeded nearest-neighbor cells, with wall thickness, anisotropy, warp and envelope controls. Neither creates a graph. Both return sampled volumes using the existing mesher and GLB pipeline. As with other operators, these are level-set values, not exact signed distances. Resolution matters for thin walls; test at 32³, refine at 64³ or 128³.
+
+### Implicit volume composition
+
+The `csg` operator combines two `volume/solid` inputs (mode 0: union, 1: intersection, 2: difference A\\B, 3: smooth union with a tunable blend). The `warp` modifier distorts an upstream volume by sampling a smooth 3D coordinate deformation. The `Hybrid / composition` preset combines a TPMS and a Voronoi foam, deforms the result and meshes it. Ports are typed and the recipe remains an acyclic DAG. Blending operates in the units of sampled implicit fields, not true signed distances; the apparent blend radius therefore depends on source scaling. Neither modifier mutates upstream artifacts.
