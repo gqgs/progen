@@ -470,18 +470,18 @@ func (e *Engine) Run(ctx context.Context, request RunRequest, progress func(int,
 func (e *Engine) RunWithFailures(ctx context.Context, request RunRequest, progress func(int, int, string)) (results []*Candidate, failures []CandidateFailure, runErr error) {
 	req, recipe, err := e.Prepare(request)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Recipe = &recipe
 	archive, err := e.Archive(recipe)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	record := RunRecord{Request: req, InitialArchive: archive, Status: "running", Created: time.Now().UTC(), Candidates: []string{}}
 	record.ID = hash(record)
 	path := filepath.Join(e.Workspace, "runs", record.ID+".json")
 	if err = writeJSON(path, record); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() {
 		record.Finished = time.Now().UTC()
