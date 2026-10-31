@@ -126,14 +126,23 @@ async function thumbnail(c) {
   return url;
 }
 let galleryEpoch = 0;
+const pendingThumbnails = new Set();
 async function drawGallery() {
   const epoch = ++galleryEpoch;
   const filter = $("filter").value;
   const list = candidates.filter((c) => filter === "all" || c.feedback === filter);
   $("candidateCount").textContent = candidates.length;
   $("empty").classList.toggle("hidden", candidates.length > 0);
-  $("gallery").replaceChildren();
+  const visible = new Set(list.map(c => c.id));
+  for (const card of $("gallery").children) if (!visible.has(card.dataset.id)) card.remove();
   for (const c of list) {
+    const existing = $("gallery").querySelector(`[data-id="${c.id}"]`);
+    if (existing) {
+      existing.classList.toggle("selected", selected?.id === c.id);
+      existing.querySelector(".badge").textContent = c.feedback === "favorite" ? "★" : c.feedback === "rejected" ? "×" : "";
+      existing.onclick = task(() => select(c));
+      continue;
+    }
     const card = document.createElement("button");
     card.className = "card" + (selected?.id === c.id ? " selected" : "");
     card.dataset.id = c.id;
@@ -152,14 +161,22 @@ async function drawGallery() {
     info.append(badge, strong, sub);
     card.append(img, info);
     card.onclick = task(() => select(c));
-    $("gallery").append(card);
+    const next = list.slice(list.indexOf(c) + 1).map(item => $("gallery").querySelector(`[data-id="${item.id}"]`)).find(Boolean);
+    $("gallery").insertBefore(card, next || null);
   }
   for (const c of list) {
     if (epoch !== galleryEpoch) return;
     try {
-      const src = await thumbnail(c);
+      const pending = thumbnail(c);
+      pendingThumbnails.add(pending);
+      let src;
+      try { src = await pending; } finally { pendingThumbnails.delete(pending); }
+      if (epoch !== galleryEpoch) return;
       const img = $("gallery").querySelector(`[data-id="${c.id}"] img`);
-      if (img && src) img.src = src;
+      if (img && src && img.getAttribute("src") !== src) {
+        img.onload = () => img.classList.add("loaded");
+        img.src = src;
+      }
     } catch (err) {
       showError(err);
     }
@@ -305,12 +322,18 @@ $("rejectUnkept").onclick = task(async () => {
 });
 $("purge").onclick = task(async () => {
   if (!confirm("Permanently delete ALL generations, including kept specimens, meshes, caches, archives, and job history?")) return;
-  await api("generations", { method: "DELETE", body: JSON.stringify({ confirm: "purge-all-generations" }) });
+  events.close();
+  ++galleryEpoch;
+  await Promise.allSettled([...pendingThumbnails]);
+  try {
+    await api("generations", { method: "DELETE", body: JSON.stringify({ confirm: "purge-all-generations" }) });
+  } catch (error) { connectEvents(); throw error; }
   thumbs.clear();
   $("error").classList.add("hidden");
   $("job").classList.add("hidden");
   await refresh();
   $("reviewStatus").textContent = "All generations purged.";
+  connectEvents();
 });
 $("filter").onchange = () => void drawGallery();
 async function pollJob() {
@@ -394,3 +417,17 @@ await task(async () => {
   }
 })();
 
+
+let events;
+function connectEvents() {
+events = new EventSource("/api/events");
+events.onmessage = task(async event => {
+  candidates = JSON.parse(event.data);
+  if (selected) selected = candidates.find(c => c.id === selected.id) || null;
+  updateSelection();
+  await drawGallery();
+  await drawArchive();
+});
+}
+connectEvents();
+window.addEventListener("pagehide", () => events.close());
