@@ -46,7 +46,20 @@ try {
     if (msg.type() === "error" && !msg.text().includes("favicon")) errors.push(msg.text());
   });
   await page.goto(base);
-  await page.waitForFunction(() => document.querySelector("#order").disabled === false && document.querySelectorAll("#archive button").length === 256);
+  await page.waitForFunction(() => document.querySelector("#order").disabled === false && !document.querySelector("#generate").disabled && document.querySelectorAll("#archive button").length === 256);
+  // Startup now randomizes all attributes. Restore the known-valid tree fixture
+  // before exercising the original deterministic review and export workflow.
+  const defaults = await (await fetch(base + "/api/recipe")).json();
+  await page.evaluate(recipe => {
+    const fixed = {order:["eigenmode","order"],attractions:["branching","attractions"],guidance:["branching","guidance"],radius:["branching","radius"],amount:["porous","amount"],frequency:["porous","frequency"]};
+    for (const node of recipe.nodes) for (const [param,value] of Object.entries(node.params || {})) {
+      const fixedId = Object.keys(fixed).find(id => fixed[id][0] === node.operator && fixed[id][1] === param);
+      const input = fixedId
+        ? document.getElementById(fixedId)
+        : document.querySelector(`#operatorParams input[data-node="${node.id}"][data-param="${param}"]`);
+      if (input) { input.value = String(value); input.dispatchEvent(new Event("input", {bubbles:true})); }
+    }
+  }, defaults);
   await page.locator("#seed").fill("18446744073709551615");
   await page.locator("#count").fill("2");
   await page.locator("#resolution").selectOption("32");
