@@ -23,9 +23,11 @@ The default batch contains 16 candidates at 64³ samples. The first candidate us
 
 ## Review and cleanup
 
-In the gallery, completed batches default to **rejected**. Click **Keep** on specimens worth saving; the gallery still displays all specimens so you can inspect a batch without approving each rejection. Kept specimens remain available to the morphology archive and future variations. MAP-Elites uses provisional elites during a running search, then rejects unkept results when the job finishes. CLI generation retains neutral feedback for programmatic workflows.
+New gallery specimens remain unreviewed until you keep or reject them. **Keep** preserves a specimen across batches and enables variations. Starting the next batch permanently purges all previous unkept specimens. Finishing a batch leaves its results available for review.
 
-**Reject all unkept** also clears unreviewed specimens from earlier versions, preserving kept specimens. Rejection retains files for inspection and restoration. **Purge all generations** permanently removes every specimen (including kept ones), meshes, caches, archives, runs, and job history from the current workspace after confirmation. Finish or cancel active jobs first. Recipes outside the generated-data directories are preserved.
+**Reject & delete** permanently removes the selected specimen, including its manifest and mesh. **Delete all unkept** also removes legacy rejected specimens while preserving kept ones. Cache entries are removed only when no surviving specimen references them, including intermediate node outputs. Shared batch history is retained with deleted IDs removed; empty affected job/run records and stale archive membership are removed. Surviving children keep their geometry but no longer reference a deleted parent. Finish or cancel active jobs before deleting specimens.
+
+**Purge all generations** removes all specimens, caches, archives, and history after confirmation. Rejection has no restore action. Recipes outside generated-data directories are preserved.
 
 **Randomize all attributes** samples every registered operator parameter within its schema bounds, including parameters only exposed through the recipe JSON, and changes the generation seed and grid resolution. Candidate count and variation scale remain your batch preferences.
 

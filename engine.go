@@ -532,6 +532,13 @@ func (e *Engine) Feedback(id, state string) error {
 	if err != nil {
 		return err
 	}
+	if state == "rejected" {
+		all, err := e.List()
+		if err != nil {
+			return err
+		}
+		return e.deleteCandidates(all, map[string]bool{id: true})
+	}
 	c.Feedback = state
 	if err = writeJSON(filepath.Join(e.Workspace, "candidates", id, "candidate.json"), c); err != nil {
 		return err

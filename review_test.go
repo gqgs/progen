@@ -71,9 +71,9 @@ func TestReviewRandomizationAndPurge(t *testing.T) {
 	if w := request("POST", "/api/candidates/reject-unkept", ""); w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
-	c, _ = e.Get(c.ID)
+	_, removedErr := e.Get(c.ID)
 	kept, _ = e.Get(kept.ID)
-	if c.Feedback != "rejected" || kept.Feedback != "favorite" {
+	if !os.IsNotExist(removedErr) || kept.Feedback != "favorite" {
 		t.Fatal("bulk reject lost keep decision")
 	}
 	body, _ := json.Marshal(recipe)
