@@ -223,6 +223,9 @@ The mesher still enforces a hard **two-million-triangle** ceiling. If a candidat
 
 ## Structure-conditioned bridge experiment
 
+[Rendered bridge review and validation evidence](docs/evidence/bridge-mvp/README.md)
+compares both seeds at 32³/64³.
+
 The `bridge` preset implements the decoration milestone of #13. A coarse GLB
 reference supplies retained geometry; a version 1 semantic sidecar defines required
 solid, forbidden clearance, editable regions, endpoint anchors, a straight horizontal
@@ -331,7 +334,7 @@ Additional checks:
 ```sh
 go test -run 'TestBridge|TestArchetype|TestConstraint|TestConditioned' ./...
 node scripts/browser-bridge-test.mjs
-node scripts/browser-implicit-test.mjs
+CHROMIUM_PATH=/usr/bin/chromium node scripts/browser-implicit-test.mjs
 ```
 
 The bridge Chromium check saves rendered reference/result/overlay views at both
