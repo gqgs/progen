@@ -221,6 +221,7 @@ func (s *Server) Handler() http.Handler {
 			problem(w, 500, err)
 			return
 		}
+		s.reloadJobs()
 		respond(w, 200, map[string]int{"rejected": count})
 	})
 	mux.HandleFunc("DELETE /api/generations", func(w http.ResponseWriter, r *http.Request) {
@@ -268,10 +269,17 @@ func (s *Server) Handler() http.Handler {
 			problem(w, 400, err)
 			return
 		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if v.State == "rejected" && len(s.cancels) > 0 {
+			problem(w, 409, fmt.Errorf("finish or cancel the batch before permanently rejecting specimens"))
+			return
+		}
 		if err := s.Engine.Feedback(r.PathValue("id"), v.State); err != nil {
 			problem(w, 400, err)
 			return
 		}
+		s.reloadJobs()
 		respond(w, 200, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("GET /api/candidates/{id}/asset.glb", func(w http.ResponseWriter, r *http.Request) {
@@ -399,7 +407,22 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Recipe = &recipe
+	if req.Kind == "vary" {
+		c, err := s.Engine.Get(req.Parent)
+		if err != nil || c.Feedback != "favorite" {
+			problem(w, 400, fmt.Errorf("keep the parent specimen before exploring variations"))
+			return
+		}
+	}
 	s.mu.Lock()
+	if len(s.cancels) == 0 {
+		if _, err := s.Engine.RejectUnkept(nil); err != nil {
+			s.mu.Unlock()
+			problem(w, 500, err)
+			return
+		}
+		s.reloadJobs()
+	}
 	if len(s.cancels) >= 8 {
 		s.mu.Unlock()
 		problem(w, 429, fmt.Errorf("job queue is full"))
@@ -443,17 +466,6 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request) {
 			j.Total = total
 			j.Stage = node
 		})
-		// Search may use provisional elites while running. Once complete, only
-		// explicitly kept specimens remain eligible for future exploration.
-		ids := []string{}
-		for _, c := range results {
-			if c != nil {
-				ids = append(ids, c.ID)
-			}
-		}
-		if _, err := s.Engine.RejectUnkept(ids); err != nil && runErr == nil {
-			runErr = err
-		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		j.Status = "completed"
@@ -475,4 +487,24 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request) {
 			j.Error = err.Error()
 		}
 	}()
+}
+
+// Caller holds s.mu; records are already validated by the deletion operation.
+func (s *Server) reloadJobs() {
+	if len(s.cancels) > 0 {
+		return
+	}
+	for id := range s.jobs {
+		data, err := os.ReadFile(filepath.Join(s.Engine.Workspace, "jobs", id+".json"))
+		if os.IsNotExist(err) {
+			delete(s.jobs, id)
+			continue
+		}
+		if err == nil {
+			var j Job
+			if json.Unmarshal(data, &j) == nil {
+				s.jobs[id] = &j
+			}
+		}
+	}
 }

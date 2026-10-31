@@ -234,8 +234,8 @@ function updateSelection() {
   $("favorite").disabled = false;
   $("reject").disabled = false;
   $("favorite").textContent = c.feedback === "favorite" ? "\u2605 Kept" : "\u2606 Keep";
-  $("reject").textContent = c.feedback === "rejected" ? "Restore" : "Reject";
-  $("vary").disabled = !c.valid || c.feedback === "rejected";
+  $("reject").textContent = "Reject & delete";
+  $("vary").disabled = !c.valid || c.feedback !== "favorite";
   $("metrics").replaceChildren();
   for (const [label, value] of [["TRIANGLES", c.metrics.triangles.toLocaleString()], ["POROSITY", `${(c.metrics.porosity * 100).toFixed(1)}%`], ["CONNECTED SOLID", `${(c.metrics.connected_fraction * 100).toFixed(1)}%`], ["GENERATION", `${(c.milliseconds / 1e3).toFixed(2)}s`]]) {
     const div = document.createElement("div");
@@ -304,21 +304,31 @@ $("graphToggle").onchange = () => {
   if (graphObject) graphObject.visible = $("graphToggle").checked;
 };
 async function feedback(state) {
+  if (state === "rejected") {
+    events.close(); ++galleryEpoch;
+    await Promise.allSettled([...pendingThumbnails]);
+  }
+  try {
   await api(`candidates/${selected.id}/feedback`, { method: "POST", body: JSON.stringify({ state }) });
   await refresh();
   updateSelection();
+  } finally { if (state === "rejected") connectEvents(); }
 }
-$("favorite").onclick = task(() => feedback(selected.feedback === "favorite" ? "rejected" : "favorite"));
-$("reject").onclick = task(() => feedback(selected.feedback === "rejected" ? "neutral" : "rejected"));
+$("favorite").onclick = task(() => feedback(selected.feedback === "favorite" ? "neutral" : "favorite"));
+$("reject").onclick = task(() => feedback("rejected"));
 $("randomize").onclick = task(async () => {
   recipe = await api("recipe/randomize", { method: "POST", body: JSON.stringify(readControls()) });
   syncControls();
   $("reviewStatus").textContent = "Generation attributes randomized.";
 });
 $("rejectUnkept").onclick = task(async () => {
-  const result = await api("candidates/reject-unkept", { method: "POST" });
+  events.close(); ++galleryEpoch;
+  await Promise.allSettled([...pendingThumbnails]);
+  let result;
+  try { result = await api("candidates/reject-unkept", { method: "POST" }); }
+  finally { connectEvents(); }
   await refresh();
-  $("reviewStatus").textContent = `Rejected ${result.rejected} unkept specimens. Kept specimens preserved.`;
+  $("reviewStatus").textContent = `Permanently deleted ${result.rejected} unkept specimens. Kept specimens preserved.`;
 });
 $("purge").onclick = task(async () => {
   if (!confirm("Permanently delete ALL generations, including kept specimens, meshes, caches, archives, and job history?")) return;
@@ -369,11 +379,14 @@ async function start(kind) {
       req.parent = selected.id;
       delete req.recipe;
     }
+    events.close(); ++galleryEpoch; ++selectionEpoch;
+    await Promise.allSettled([...pendingThumbnails]);
     const j = await api("jobs", { method: "POST", body: JSON.stringify(req) });
     activeJob = j.id;
     $("job").classList.remove("hidden");
     await pollJob();
   } finally {
+    events.close(); connectEvents();
     submitting = false;
   }
 }

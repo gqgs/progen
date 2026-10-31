@@ -57,7 +57,7 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll(".card img")].filter((i) => i.src.startsWith("data:")).length >= 1);
   const initial = await (await fetch(base + "/api/candidates")).json();
   assert.equal(initial.length, 2);
-  assert.ok(initial.every((c) => c.feedback === "rejected"), "new batches default to rejected");
+  assert.ok(initial.every((c) => c.feedback === "neutral"), "new batches remain reviewable");
   assert.equal(initial[0].recipe.seed, "18446744073709551615");
   const first = await page.locator(".card.selected").getAttribute("data-id");
   assert.ok(initial.find((c) => c.id === first).valid);
@@ -70,17 +70,15 @@ try {
   await page.locator("#graphToggle").check();
   await page.locator("#count").fill("1");
   await page.locator("#vary").click();
-  await page.waitForFunction(() => document.querySelector("#jobState").textContent === "COMPLETED" && document.querySelectorAll(".card").length === 3, {}, { timeout: 6e4 });
+  await page.waitForFunction(() => document.querySelector("#jobState").textContent === "COMPLETED" && document.querySelectorAll(".card").length === 2, {}, { timeout: 6e4 });
   const after = await (await fetch(base + "/api/candidates")).json();
   const child = after.find((c) => c.parent === first);
   assert.ok(child);
   assert.equal(child.recipe.seed, initial.find((c) => c.id === first).recipe.seed);
   await page.locator(`.card[data-id="${child.id}"]`).click();
-  await page.waitForFunction(() => document.querySelector("#reject").textContent === "Restore");
-  assert.equal(await page.locator("#vary").isDisabled(), true);
-  await page.locator("#filter").selectOption("rejected");
-  await page.waitForFunction(() => document.querySelectorAll(".card").length === 2);
-  await page.locator("#filter").selectOption("all");
+  await page.locator("#reject").click();
+  await page.waitForFunction(() => document.querySelectorAll(".card").length === 1);
+  assert.equal((await fetch(base + "/api/candidates/" + child.id)).status, 404);
   await page.locator(`.card[data-id="${first}"]`).click();
   const [download] = await Promise.all([page.waitForEvent("download"), page.locator("#downloadGLB").click()]);
   const glbPath = path.join(workspace, "download.glb");
@@ -124,7 +122,7 @@ try {
   assert.equal(await page.locator("#downloadGLB").getAttribute("href"), null);
   assert.equal((await (await fetch(base + "/api/jobs")).json()).length, 0);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ workspace, candidates: (await (await fetch(base + "/api/candidates")).json()).length, glbErrors: validation.issues.numErrors, glbWarnings: validation.issues.numWarnings, browserErrors: errors, checks: ["generate", "inspect", "favorite", "reload", "vary", "reject", "filter", "graph overlay", "GLB export", "source ZIP", "MAP-Elites", "responsive layout", "server restart", "default rejection", "bulk rejection", "randomize", "cancel purge", "purge"] }, null, 2));
+  console.log(JSON.stringify({ workspace, candidates: (await (await fetch(base + "/api/candidates")).json()).length, glbErrors: validation.issues.numErrors, glbWarnings: validation.issues.numWarnings, browserErrors: errors, checks: ["generate", "inspect", "favorite", "reload", "vary", "permanent rejection", "next-batch cleanup", "graph overlay", "GLB export", "source ZIP", "MAP-Elites", "responsive layout", "server restart", "unreviewed batch results", "bulk rejection", "randomize", "cancel purge", "purge"] }, null, 2));
 } catch (error) {
   console.error(log);
   throw error;
