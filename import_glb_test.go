@@ -252,3 +252,60 @@ func TestArchetypeGLBCancelAndThin(t *testing.T) {
 		t.Fatalf("thin mesh should diagnose coarse sampling: %v", err)
 	}
 }
+
+func TestArchetypeGLBConvexBoundarySliver(t *testing.T) {
+	// Split a unit cube edge very close to its endpoint. The shape is still a
+	// full-size convex cube; its two additional thin boundary triangles are
+	// nondegenerate under ValidateMesh and must not erase the occupied volume.
+	m := archetypeTestBox()
+	for i, point := range m.Positions {
+		m.Positions[i] = point.Add(Vec3{.5, .5, .5})
+	}
+	m.Positions = append(m.Positions, Vec3{1e-13, 0, 0})
+	m.Normals = append(m.Normals, Vec3{0, 0, -1})
+	indices := []uint32{}
+	for i := 0; i < len(m.Indices); i += 3 {
+		triangle := m.Indices[i : i+3]
+		switch [3]uint32{triangle[0], triangle[1], triangle[2]} {
+		case [3]uint32{0, 2, 1}:
+			indices = append(indices, 0, 2, 8, 8, 2, 1)
+		case [3]uint32{0, 1, 5}:
+			indices = append(indices, 0, 8, 5, 8, 1, 5)
+		default:
+			indices = append(indices, triangle...)
+		}
+	}
+	m.Indices = indices
+	_, volume, err := DecodeArchetypeGLB(context.Background(), archetypeTestGLB(t, m), ImportTransform{Scale: 1}, archetypeTestDomain())
+	if err != nil {
+		t.Fatalf("valid convex cube with boundary slivers rejected: %v", err)
+	}
+	if volume.SignedValue(Vec3{.5, .5, .5}) >= 0 {
+		t.Fatal("boundary slivers erased the cube interior")
+	}
+}
+
+func TestArchetypeGLBHugeChunkLength(t *testing.T) {
+	for _, length := range []uint32{0xfffffffc, 0x80000000, 0x7ffffffc} {
+		data := archetypeTestGLB(t, archetypeTestBox())
+		binary.LittleEndian.PutUint32(data[12:16], length)
+		_, _, err := DecodeArchetypeGLB(context.Background(), data, ImportTransform{Scale: 1}, archetypeTestDomain())
+		if err == nil || !strings.Contains(err.Error(), "invalid chunk length") {
+			t.Fatalf("chunk length %#x: expected explicit bounds rejection, got %v", length, err)
+		}
+	}
+}
+
+func TestArchetypeGLBSmallReferenceNormals(t *testing.T) {
+	domain := archetypeTestDomain()
+	domain.Box = Box{Vec3{-1e-6, -1e-6, -1e-6}, Vec3{1e-6, 1e-6, 1e-6}}
+	mesh, _, err := DecodeArchetypeGLB(context.Background(), archetypeTestGLB(t, archetypeTestBox()), ImportTransform{Scale: 4e-7}, domain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, normal := range mesh.Normals {
+		if !normal.Finite() || math.Abs(normal.Len()-1) > 1e-12 {
+			t.Fatalf("supported nondegenerate small cube vertex %d has invalid unit normal %v", i, normal)
+		}
+	}
+}

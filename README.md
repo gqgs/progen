@@ -294,6 +294,12 @@ boxes, and supported upward-facing deck surfaces plus headroom along the declare
 strip. Headroom triangles are checked in the oriented traversal corridor as well
 as through volume probes. These checks are bounded by grid resolution and an
 explicit `surface_tolerance` (0.1 m in the fixture), with half-grid traversal probes.
+Geometry checks use the float32 coordinates actually emitted to GLB. Required
+solids and anchors also reject mesh surfaces cutting their interiors, so positive
+grid occupancy alone cannot hide a thin missing layer. Conditioned output meshes
+must match the canonical marching-tetrahedra surface of the exposed result volume
+in GLB precision; substituted, reordered or custom surfaces are explicitly invalid
+for this milestone. The additional verification remesh is bounded and cancellable.
 Curved/sloping paths are unsupported. A connected mesh or occupied voxel component
 is not proof of traversal. These checks certify neither game navigation/collision
 behavior nor real-world load-bearing structural safety.

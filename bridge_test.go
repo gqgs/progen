@@ -216,3 +216,85 @@ func TestBridgeSourceLibraryBound(t *testing.T) {
 		t.Fatal("over-budget import left source files", err)
 	}
 }
+
+func TestBridgeBoundedSourceReload(t *testing.T) {
+	e, err := NewEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ext := range []string{".glb", ".json"} {
+		r := BridgeRecipe()
+		digest := strings.Repeat("a", 64)
+		if ext == ".glb" {
+			r.Source.GLBSHA256 = digest
+		} else {
+			r.Source.SidecarSHA256 = digest
+		}
+		dir := filepath.Join(e.Workspace, "sources")
+		if err = os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Create(filepath.Join(dir, digest+ext))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = f.Truncate(128 << 20)
+		f.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err = e.sourceBytes(r.Source); err == nil || !strings.Contains(err.Error(), "reload limit") {
+			t.Fatal("unbounded source reload", ext, err)
+		}
+	}
+}
+
+func TestBridgeTransformedSourceReload(t *testing.T) {
+	ctx := context.Background()
+	e, err := NewEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := BridgeRecipe().Source.Spec
+	spec.Transform = ImportTransform{Scale: .99, Translation: Vec3{.02, 0, 0}}
+	raw, _ := json.Marshal(spec)
+	r, err := e.ImportArchetype(ctx, bridgeGLB, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := e.Evaluate(ctx, r, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Valid {
+		t.Fatal(c.Problems)
+	}
+	reference, err := e.Artifact(c, "reference")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Vec3{-3.8, -.4, -.95}.Mul(.99).Add(Vec3{.02, 0, 0})
+	if reference.Mesh.Positions[0].Sub(want).Len() > 1e-6 {
+		t.Fatal("lost normalization transform")
+	}
+	fresh, err := NewEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = fresh.ImportArchetype(ctx, bridgeGLB, raw); err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(c.Recipe)
+	var replay Recipe
+	json.Unmarshal(encoded, &replay)
+	again, err := fresh.Evaluate(ctx, replay, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Valid || again.ID != c.ID || !reflect.DeepEqual(again.Artifacts, c.Artifacts) || again.Recipe.Source.Spec.Transform != spec.Transform {
+		t.Fatal("transformed replay changed geometry or provenance", again.Problems)
+	}
+	if again.Recipe.Source.GLBSHA256 != sourceDigest(bridgeGLB) || again.Recipe.Source.SidecarSHA256 != sourceDigest(raw) {
+		t.Fatal("source fingerprints lost")
+	}
+}

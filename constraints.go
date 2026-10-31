@@ -271,8 +271,10 @@ func ConstrainDecoration(ctx context.Context, reference, decoration, required, f
 
 // ValidateConditioned measures functional constraints independently of solid
 // connected-component quality. It verifies the source contract, occupancy,
-// actual forbidden-region triangle intersections, and upward-facing deck
-// intersections along the entire sampled traversal strip. The result remains a
+// actual protected-region triangle intersections, canonical volume/mesh
+// correspondence, and upward-facing deck intersections along the sampled strip.
+// Geometry predicates use the float32 coordinates actually emitted by GLB.
+// The result remains a
 // resolution-bounded geometry check, not a real-world safety assessment.
 func ValidateConditioned(ctx context.Context, s ConstraintSpec, reference, result *VolumeGrid, mesh *Mesh) ([]string, error) {
 	if reference == nil || result == nil || mesh == nil {
@@ -286,6 +288,14 @@ func ValidateConditioned(ctx context.Context, s ConstraintSpec, reference, resul
 		return nil, fmt.Errorf("conditioned evaluator volume mismatch")
 	}
 	if err := validateMeshStructure(mesh, d); err != nil {
+		return []string{err.Error()}, nil
+	}
+	if len(mesh.Indices)/3 > s.Budget.MaxTriangles {
+		return []string{fmt.Sprintf("conditioned triangle budget exceeded: %d > %d", len(mesh.Indices)/3, s.Budget.MaxTriangles)}, nil
+	}
+	var err error
+	mesh, err = quantizedConditionedMesh(mesh, d)
+	if err != nil {
 		return []string{err.Error()}, nil
 	}
 	required, forbidden, editable, err := s.Masks(ctx, d)
@@ -360,27 +370,59 @@ func ValidateConditioned(ctx context.Context, s ConstraintSpec, reference, resul
 			problems = append(problems, fmt.Sprintf("anchor %s attachment lost: %d missing samples", anchor.Name, resultMissing))
 		}
 	}
-	if len(mesh.Indices)/3 > s.Budget.MaxTriangles {
-		problems = append(problems, fmt.Sprintf("conditioned triangle budget exceeded: %d > %d", len(mesh.Indices)/3, s.Budget.MaxTriangles))
+	canonical, err := (Tetrahedra{}).Mesh(ctx, result)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return append(problems, "conditioned canonical meshing failed: "+err.Error()), nil
+	}
+	if !conditionedMeshMatches(mesh, canonical) {
+		problems = append(problems, "conditioned mesh does not match the canonical volume surface in GLB precision")
 	}
 	meshIntrusion := false
+	requiredCut := false
+	anchorCuts := make([]bool, len(s.Anchors))
 	epsilon := d.Box.Max.Sub(d.Box.Min).Len() * 1e-9
-	for i := 0; i < len(mesh.Indices) && !meshIntrusion; i += 3 {
+	for i := 0; i < len(mesh.Indices); i += 3 {
 		if i%12288 == 0 {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
 		}
 		tri := [3]Vec3{mesh.Positions[mesh.Indices[i]], mesh.Positions[mesh.Indices[i+1]], mesh.Positions[mesh.Indices[i+2]]}
-		for _, box := range s.Forbidden {
-			if triangleBoxInterior(tri, box, epsilon) {
-				meshIntrusion = true
-				break
+		if !meshIntrusion {
+			for _, box := range s.Forbidden {
+				if triangleBoxInterior(tri, box, epsilon) {
+					meshIntrusion = true
+					break
+				}
+			}
+		}
+		if !requiredCut {
+			for _, box := range s.Required {
+				if triangleBoxInterior(tri, box, epsilon) {
+					requiredCut = true
+					break
+				}
+			}
+		}
+		for j, anchor := range s.Anchors {
+			if !anchorCuts[j] && triangleBoxInterior(tri, anchor.Region, epsilon) {
+				anchorCuts[j] = true
 			}
 		}
 	}
 	if meshIntrusion {
 		problems = append(problems, "mesh intrudes into forbidden clearance between grid samples")
+	}
+	if requiredCut {
+		problems = append(problems, "mesh cuts required solid between grid samples")
+	}
+	for j, cut := range anchorCuts {
+		if cut {
+			problems = append(problems, fmt.Sprintf("mesh cuts anchor %s attachment between grid samples", s.Anchors[j].Name))
+		}
 	}
 	traversalProblems, err := validateTraversal(ctx, s.Traversal, result, mesh)
 	if err != nil {
@@ -388,6 +430,42 @@ func ValidateConditioned(ctx context.Context, s ConstraintSpec, reference, resul
 	}
 	problems = append(problems, traversalProblems...)
 	return problems, nil
+}
+
+// Conditioned assets deliberately use the existing canonical mesher. A custom
+// surface cannot substitute a visually different mesh while retaining a valid
+// occupancy grid. Comparing in GLB precision also covers export quantization.
+func conditionedMeshMatches(mesh, canonical *Mesh) bool {
+	if len(mesh.Positions) != len(canonical.Positions) || len(mesh.Indices) != len(canonical.Indices) {
+		return false
+	}
+	for i, p := range canonical.Positions {
+		if mesh.Positions[i] != glbPrecisionVec(p) {
+			return false
+		}
+	}
+	for i, index := range canonical.Indices {
+		if mesh.Indices[i] != index {
+			return false
+		}
+	}
+	return true
+}
+
+func glbPrecisionVec(p Vec3) Vec3 {
+	return Vec3{float64(float32(p.X)), float64(float32(p.Y)), float64(float32(p.Z))}
+}
+
+func quantizedConditionedMesh(mesh *Mesh, d Domain) (*Mesh, error) {
+	q := &Mesh{Positions: make([]Vec3, len(mesh.Positions)), Normals: make([]Vec3, len(mesh.Normals)), Indices: mesh.Indices}
+	for i, p := range mesh.Positions {
+		q.Positions[i] = glbPrecisionVec(p)
+		q.Normals[i] = glbPrecisionVec(mesh.Normals[i])
+	}
+	if err := ValidateMesh(q, d); err != nil {
+		return nil, fmt.Errorf("conditioned mesh is invalid after GLB float32 quantization: %w", err)
+	}
+	return q, nil
 }
 
 func validateTraversal(ctx context.Context, t TraversalSpec, result *VolumeGrid, mesh *Mesh) ([]string, error) {

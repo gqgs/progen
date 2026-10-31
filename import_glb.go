@@ -147,11 +147,14 @@ func parseArchetypeGLB(data []byte) (archetypeDoc, []byte, error) {
 		if len(data)-pos < 8 {
 			return fail("truncated chunk header")
 		}
-		n, kind := int(u32(pos)), u32(pos+4)
+		length, kind := u32(pos), u32(pos+4)
 		pos += 8
-		if n%4 != 0 || n > len(data)-pos {
+		// Check the unsigned chunk length before narrowing it to int. A corrupt
+		// uint32 length must not become negative on 32-bit hosts.
+		if length%4 != 0 || uint64(length) > uint64(len(data)-pos) {
 			return fail("invalid chunk length")
 		}
+		n := int(length)
 		switch kind {
 		case 0x4e4f534a:
 			if raw != nil || pos != 20 {
@@ -473,7 +476,17 @@ func (d archetypeDoc) mesh(ctx context.Context, bin []byte, normalization Import
 		}
 	}
 	for i := range m.Normals {
-		m.Normals[i] = m.Normals[i].Unit()
+		length := m.Normals[i].Len()
+		if !finite(length) {
+			return nil, fmt.Errorf("normalized archetype normal magnitude overflows; reduce coordinate scale")
+		}
+		if length > 0 {
+			m.Normals[i] = m.Normals[i].Mul(1 / length)
+		} else {
+			// An unreferenced vertex has no geometric normal. Keep the same
+			// finite unit fallback as the built-in mesher for GLB compatibility.
+			m.Normals[i] = Vec3{0, 1, 0}
+		}
 	}
 	return m, nil
 }
@@ -576,7 +589,12 @@ func convexArchetypeShells(ctx context.Context, m *Mesh, d Domain) ([][]archetyp
 			}
 			t := triangles[i]
 			a, b, c := vertices[t[0]], vertices[t[1]], vertices[t[2]]
-			normal := b.Sub(a).Cross(c.Sub(a)).Unit()
+			normal := b.Sub(a).Cross(c.Sub(a))
+			// ValidateMesh already rejects degenerate faces. Vec3.Unit's generic
+			// near-zero cutoff is larger than that geometry threshold; applying
+			// it here would turn valid thin boundary triangles into zero planes
+			// and erase the entire shell's negative interior.
+			normal = normal.Mul(1 / normal.Len())
 			plane := archetypePlane{normal, normal.Dot(a)}
 			for v := range points {
 				if normal.Dot(vertices[v].Sub(a)) > tolerance {
