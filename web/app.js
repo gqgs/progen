@@ -179,7 +179,10 @@ async function drawGallery() {
     const strong = document.createElement("strong");
     strong.textContent = `SPECIMEN ${c.id.slice(0, 6).toUpperCase()}`;
     const sub = document.createElement("span");
-    sub.textContent = c.valid ? `${c.metrics.triangles.toLocaleString()} faces \xB7 ${Math.round(c.metrics.porosity * 100)}% porous` : "Invalid geometry";
+    const compositionLabel = c.artifacts?.graph
+      ? `${Math.round(c.metrics.porosity * 100)}% porous`
+      : `${Math.round(c.metrics.solid_fraction * 100)}% filled`;
+    sub.textContent = c.valid ? `${c.metrics.triangles.toLocaleString()} faces · ${compositionLabel}` : "Invalid geometry";
     const badge = document.createElement("span");
     badge.className = "badge";
     badge.textContent = c.feedback === "favorite" ? "\u2605" : c.feedback === "rejected" ? "\xD7" : "";
@@ -262,7 +265,9 @@ function updateSelection() {
   $("reject").textContent = "Reject & delete";
   $("vary").disabled = !c.valid || c.feedback !== "favorite";
   $("metrics").replaceChildren();
-  for (const [label, value] of [["TRIANGLES", c.metrics.triangles.toLocaleString()], ["POROSITY", `${(c.metrics.porosity * 100).toFixed(1)}%`], ["CONNECTED SOLID", `${(c.metrics.connected_fraction * 100).toFixed(1)}%`], ["GENERATION", `${(c.milliseconds / 1e3).toFixed(2)}s`]]) {
+  for (const [label, value] of [["TRIANGLES", c.metrics.triangles.toLocaleString()], ...(c.artifacts?.graph
+    ? [["POROSITY", `${(c.metrics.porosity * 100).toFixed(1)}%`]]
+    : [["SOLID VOLUME", `${(c.metrics.solid_fraction * 100).toFixed(1)}%`], ["EXPOSED FACES", `${(c.metrics.surface_fraction * 100).toFixed(1)}%`]]), ["CONNECTED SOLID", `${(c.metrics.connected_fraction * 100).toFixed(1)}%`], ["GENERATION", `${(c.milliseconds / 1e3).toFixed(2)}s`]]) {
     const div = document.createElement("div");
     div.className = "metric";
     const a = document.createElement("span");
