@@ -58,7 +58,8 @@ function syncControls() {
       const label = document.createElement("label");
       label.textContent = node.operator + " · " + param;
       const input = document.createElement("input");
-      input.type = "number"; input.min = spec.min; input.max = spec.max;
+      const bounds = recipe.source?.spec.parameter_bounds?.[node.id]?.[param] || spec;
+      input.type = "number"; input.min = bounds.min; input.max = bounds.max;
       input.step = spec.type === "integer" ? "1" : "any";
       input.value = node.params[param];
       input.dataset.node = node.id; input.dataset.param = param;
@@ -69,6 +70,11 @@ function syncControls() {
   const resolution = String(recipe.domain.resolution);
   if (![...$("resolution").options].some((o) => o.value === resolution)) $("resolution").add(new Option(resolution, resolution));
   $("resolution").value = resolution;
+  for (const option of $("resolution").options) option.disabled = !!recipe.source && !["32","64"].includes(option.value);
+  $("search").disabled = recipeRandomizing || !!recipe.source;
+  $("count").max = recipe.source?.spec.budget.max_candidates || 256;
+  if (recipe.source) $("count").value = Math.min(Number($("count").value),Number($("count").max));
+  $("sourceStatus").textContent = recipe.source ? `Source SHA-256 ${recipe.source.glb_sha256.slice(0,16)} · masks v${recipe.source.spec.version}` : "";
 }
 // All entry points use the same server-side randomizer, which covers hidden
 // parameters as well as seed and resolution. The epoch prevents late replies
@@ -76,6 +82,7 @@ function syncControls() {
 function setRecipeRandomizing(busy) {
   recipeRandomizing = busy;
   for (const id of ["generate", "search", "randomize"]) $(id).disabled = busy;
+  $("search").disabled = busy || !!recipe?.source;
 }
 async function randomizeAllAttributes(baseRecipe) {
   const epoch = ++recipeChangeEpoch;
@@ -105,7 +112,7 @@ rim.position.set(-3, 1, -2);
 scene.add(rim);
 const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 100);
 camera.position.set(2.8, 1.8, 3.5);
-let renderer, controls, model, graphObject;
+let renderer, controls, model, graphObject, referenceObject;
 try {
   renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -270,7 +277,10 @@ function updateSelection() {
   const c = selected;
   if (!c) {
     ++selectionEpoch;
-    dispose(model); dispose(graphObject);
+    dispose(model); dispose(graphObject); dispose(referenceObject);
+    referenceObject = null;
+    $("comparison").disabled = true;
+    $("constraintStatus").classList.add("hidden");
     model = graphObject = null;
     $("selectedTitle").textContent = "No specimen selected";
     $("selectedId").textContent = "Your selection will appear here.";
@@ -310,6 +320,10 @@ function updateSelection() {
       a.download = `progen-${c.id.slice(0, 8)}.${path.split(".").at(-1)}`;
     }
   }
+  $("constraintStatus").classList.toggle("hidden",!c.recipe.source);
+  if (c.recipe.source) $("constraintStatus").textContent = c.valid
+    ? `Deck, endpoints, clearance and editable-region checks passed at ${c.recipe.domain.resolution}³ (floor tolerance ${c.recipe.source.spec.traversal.surface_tolerance} m).`
+    : `Constraint failures: ${c.problems.join("; ")}`;
   $("provenance").textContent = JSON.stringify({ id: c.id, parent: c.parent, engine: c.engine, valid: c.valid, problems: c.problems, nodes: c.nodes, recipe: c.recipe }, null, 2);
   if (!c.valid) showError(new Error(c.problems.join("; ")));
 }
@@ -322,25 +336,37 @@ async function select(c) {
   if (epoch !== selectionEpoch) return;
   dispose(model);
   dispose(graphObject);
+  dispose(referenceObject);
+  referenceObject = null;
+  $("comparison").disabled = !c.recipe.source;
+  $("comparison").value = "result";
   model = null;
   graphObject = null;
-  if (!c.valid || !renderer) {
+  if ((!c.valid && !c.recipe.source) || !renderer) {
     $("viewerHint").textContent = c.valid ? "WebGL unavailable" : "No valid mesh";
     $("viewerHint").classList.remove("hidden");
     return;
   }
   $("viewerHint").textContent = "Loading specimen\u2026";
   $("viewerHint").classList.remove("hidden");
-  const gltf = await loader.loadAsync(`/api/candidates/${c.id}/asset.glb`);
+  const gltf = c.valid ? await loader.loadAsync(`/api/candidates/${c.id}/asset.glb`) : {scene: artifactMesh((await api(`candidates/${c.id}/artifacts/mesh`)).mesh)};
   if (epoch !== selectionEpoch) {
     dispose(gltf.scene);
     return;
   }
   model = gltf.scene;
+  if (c.recipe.source) model.traverse(o=>{if(o.isMesh){o.material.color.set(0x488f82);o.material.roughness=.75;}});
   scene.add(model);
   frame(model, camera, controls);
   $("viewerHint").classList.add("hidden");
   $("graphToggle").disabled = !c.artifacts?.graph;
+  if (c.recipe.source) {
+    const artifact = await api(`candidates/${c.id}/artifacts/reference`);
+    if (epoch !== selectionEpoch) return;
+    referenceObject = artifactMesh(artifact.mesh,true);
+    scene.add(referenceObject);
+    renderComparison();
+  }
   if (!c.artifacts?.graph) return;
   const artifact = await api(`candidates/${c.id}/artifacts/graph`);
   if (epoch !== selectionEpoch) return;
@@ -357,6 +383,57 @@ async function select(c) {
   graphObject.visible = $("graphToggle").checked;
   scene.add(graphObject);
 }
+
+function artifactMesh(mesh, reference = false) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(mesh.positions.flatMap(p=>[p.X,p.Y,p.Z]),3));
+  geometry.setIndex(mesh.indices);
+  geometry.computeVertexNormals();
+  const material = new THREE.MeshStandardMaterial({color: reference ? 0xd6a76d : 0x70b7a9,roughness:.65,side:THREE.DoubleSide});
+  return new THREE.Mesh(geometry,material);
+}
+function renderComparison() {
+  const mode = $("comparison").value;
+  if (model) model.visible = mode !== "reference";
+  if (referenceObject) {
+    referenceObject.visible = mode !== "result" || !model;
+    referenceObject.material.wireframe = mode === "overlay";
+    referenceObject.material.transparent = mode === "overlay";
+    referenceObject.material.opacity = mode === "overlay" ? .28 : 1;
+  }
+}
+$("comparison").onchange = renderComparison;
+async function previewReference() {
+  const epoch = ++selectionEpoch;
+  const artifact = await api("reference",{method:"POST",body:JSON.stringify(readControls())});
+  if (epoch !== selectionEpoch || !renderer) return;
+  dispose(model);dispose(graphObject);dispose(referenceObject);
+  model = graphObject = null;
+  referenceObject = artifactMesh(artifact.mesh,true);scene.add(referenceObject);
+  frame(referenceObject,camera,controls);
+  $("comparison").disabled = false;$("comparison").value = "reference";
+  $("graphToggle").disabled = true;
+  $("viewerHint").classList.add("hidden");renderComparison();
+}
+$("importArchetype").onclick = task(async () => {
+  const glb = $("archetypeFile").files[0], sidecar = $("sidecarFile").files[0];
+  if (!glb || !sidecar) throw new Error("Select both a GLB archetype and its constraint sidecar.");
+  if (glb.size > 8*1024*1024 || sidecar.size > 64*1024) throw new Error("Import limit: 8 MiB GLB and 64 KiB sidecar.");
+  const epoch = ++recipeChangeEpoch;
+  setRecipeRandomizing(true);
+  try {
+    const bytes = new Uint8Array(await glb.arrayBuffer());
+    let binary = "";for (const b of bytes) binary += String.fromCharCode(b);
+    const sidecarBytes = new Uint8Array(await sidecar.arrayBuffer());
+    let sidecarBinary = "";for (const b of sidecarBytes) sidecarBinary += String.fromCharCode(b);
+    const imported = await api("archetypes",{method:"POST",body:JSON.stringify({glb:btoa(binary),sidecar:btoa(sidecarBinary)})});
+    if (epoch !== recipeChangeEpoch) return;
+    recipe=imported;activeFamily="custom";$("preset").value="custom";
+    selected=null;updateSelection();syncControls();await previewReference();
+    $("reviewStatus").textContent = "Archetype and semantic masks imported. Generate to explore decorative variations.";
+  } finally {if(epoch===recipeChangeEpoch)setRecipeRandomizing(false);}
+});
+
 $("graphToggle").onchange = () => {
   if (graphObject) graphObject.visible = $("graphToggle").checked;
 };
@@ -469,6 +546,7 @@ $("recipeFile").onchange = task(async (event) => {
     activeFamily = "custom";
     $("preset").value = "custom";
     syncControls();
+    if (recipe.source) await previewReference();
   } finally {
     if (epoch === recipeChangeEpoch) setRecipeRandomizing(false);
   }
@@ -496,6 +574,7 @@ await task(async () => {
       activeFamily = family;
       selected = null;
       updateSelection();
+      if (recipe.source) await previewReference();
       await drawArchive();
     } catch (error) {
       if ($("preset").value === family) $("preset").value = activeFamily;

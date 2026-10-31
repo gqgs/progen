@@ -126,53 +126,54 @@ func Builtins() *Registry {
 			return Outputs{"mesh": {Kind: "mesh", Mesh: v}}, e
 		}), nil
 	})
-	add("tpms",nil,map[string]Port{"volume":volume},map[string]Param{
-		"surface":parameter(0,0,2,true,true),
-		"frequency":parameter(2.2,1,5,false,true),
-		"thickness":parameter(.28,.1,.6,false,true),
-		"phase":parameter(0,0,6.28,false,true),
-		"warp":parameter(.12,0,.4,false,true),
-		"envelope":parameter(.88,.65,.95,false,true),
-	},func(p map[string]float64)(Operator,error){
-		op:=TPMS{int(p["surface"]),p["frequency"],p["thickness"],p["phase"],p["warp"],p["envelope"]}
-		return OperatorFunc(func(c context.Context,d Domain,seed uint64,_ Inputs)(Outputs,error){
-			v,e:=op.Generate(c,d,seed)
-			return Outputs{"volume":{Kind:"volume",Volume:v}},e
-		}),nil
+	add("tpms", nil, map[string]Port{"volume": volume}, map[string]Param{
+		"surface":   parameter(0, 0, 2, true, true),
+		"frequency": parameter(2.2, 1, 5, false, true),
+		"thickness": parameter(.28, .1, .6, false, true),
+		"phase":     parameter(0, 0, 6.28, false, true),
+		"warp":      parameter(.12, 0, .4, false, true),
+		"envelope":  parameter(.88, .65, .95, false, true),
+	}, func(p map[string]float64) (Operator, error) {
+		op := TPMS{int(p["surface"]), p["frequency"], p["thickness"], p["phase"], p["warp"], p["envelope"]}
+		return OperatorFunc(func(c context.Context, d Domain, seed uint64, _ Inputs) (Outputs, error) {
+			v, e := op.Generate(c, d, seed)
+			return Outputs{"volume": {Kind: "volume", Volume: v}}, e
+		}), nil
 	})
-	add("voronoi_foam",nil,map[string]Port{"volume":volume},map[string]Param{
-		"cells":parameter(28,6,96,true,true),
-		"wall":parameter(.1,.045,.25,false,true),
-		"anisotropy":parameter(1,.5,2.5,false,true),
-		"warp":parameter(.075,0,.24,false,true),
-		"envelope":parameter(.88,.65,.95,false,true),
-	},func(p map[string]float64)(Operator,error){
-		op:=VoronoiFoam{int(p["cells"]),p["wall"],p["anisotropy"],p["warp"],p["envelope"]}
-		return OperatorFunc(func(c context.Context,d Domain,seed uint64,_ Inputs)(Outputs,error){
-			v,e:=op.Generate(c,d,seed)
-			return Outputs{"volume":{Kind:"volume",Volume:v}},e
-		}),nil
+	add("voronoi_foam", nil, map[string]Port{"volume": volume}, map[string]Param{
+		"cells":      parameter(28, 6, 96, true, true),
+		"wall":       parameter(.1, .045, .25, false, true),
+		"anisotropy": parameter(1, .5, 2.5, false, true),
+		"warp":       parameter(.075, 0, .24, false, true),
+		"envelope":   parameter(.88, .65, .95, false, true),
+	}, func(p map[string]float64) (Operator, error) {
+		op := VoronoiFoam{int(p["cells"]), p["wall"], p["anisotropy"], p["warp"], p["envelope"]}
+		return OperatorFunc(func(c context.Context, d Domain, seed uint64, _ Inputs) (Outputs, error) {
+			v, e := op.Generate(c, d, seed)
+			return Outputs{"volume": {Kind: "volume", Volume: v}}, e
+		}), nil
 	})
-	add("csg",map[string]Port{"a":volume,"b":volume},map[string]Port{"volume":volume},map[string]Param{
-		"mode":parameter(0,0,3,true,true),
-		"blend":parameter(.12,0,.5,false,true),
-	},func(p map[string]float64)(Operator,error){
-		op:=CSG{int(p["mode"]),p["blend"]}
-		return OperatorFunc(func(c context.Context,_ Domain,_ uint64,i Inputs)(Outputs,error){
-			v,e:=op.Combine(c,i["a"].Volume,i["b"].Volume)
-			return Outputs{"volume":{Kind:"volume",Volume:v}},e
-		}),nil
+	add("csg", map[string]Port{"a": volume, "b": volume}, map[string]Port{"volume": volume}, map[string]Param{
+		"mode":  parameter(0, 0, 3, true, true),
+		"blend": parameter(.12, 0, .5, false, true),
+	}, func(p map[string]float64) (Operator, error) {
+		op := CSG{int(p["mode"]), p["blend"]}
+		return OperatorFunc(func(c context.Context, _ Domain, _ uint64, i Inputs) (Outputs, error) {
+			v, e := op.Combine(c, i["a"].Volume, i["b"].Volume)
+			return Outputs{"volume": {Kind: "volume", Volume: v}}, e
+		}), nil
 	})
-	add("warp",map[string]Port{"volume":volume},map[string]Port{"volume":volume},map[string]Param{
-		"amplitude":parameter(.08,0,.3,false,true),
-		"frequency":parameter(1.6,.5,5,false,true),
-	},func(p map[string]float64)(Operator,error){
-		op:=VolumeWarp{p["amplitude"],p["frequency"]}
-		return OperatorFunc(func(c context.Context,_ Domain,_ uint64,i Inputs)(Outputs,error){
-			v,e:=op.Modify(c,i["volume"].Volume)
-			return Outputs{"volume":{Kind:"volume",Volume:v}},e
-		}),nil
+	add("warp", map[string]Port{"volume": volume}, map[string]Port{"volume": volume}, map[string]Param{
+		"amplitude": parameter(.08, 0, .3, false, true),
+		"frequency": parameter(1.6, .5, 5, false, true),
+	}, func(p map[string]float64) (Operator, error) {
+		op := VolumeWarp{p["amplitude"], p["frequency"]}
+		return OperatorFunc(func(c context.Context, _ Domain, _ uint64, i Inputs) (Outputs, error) {
+			v, e := op.Modify(c, i["volume"].Volume)
+			return Outputs{"volume": {Kind: "volume", Volume: v}}, e
+		}), nil
 	})
+	registerConditioned(r)
 	return r
 }
 
@@ -194,11 +195,12 @@ type Recipe struct {
 	Seed    Seed                 `json:"seed"`
 	Nodes   []Node               `json:"nodes"`
 	Outputs map[string]Reference `json:"outputs"`
+	Source  *ConditionedSource   `json:"source,omitempty"`
 }
 
 func DefaultRecipe() Recipe {
 	d := Domain{Box: Box{Vec3{-1, -1, -1}, Vec3{1, 1, 1}}, Resolution: 64, Frame: "right-handed-y-up", Unit: "meters", Boundary: "dirichlet"}
-	return Recipe{1, "Eigenmode branching", d, 42, []Node{{"field", "eigenmode", "1", nil, nil}, {"guide", "gradient", "1", nil, map[string]Reference{"field": {"field", "field"}}}, {"growth", "branching", "1", nil, map[string]Reference{"direction": {"guide", "direction"}}}, {"solid", "solidify", "1", nil, map[string]Reference{"graph": {"growth", "graph"}}}, {"pores", "porous", "1", nil, map[string]Reference{"volume": {"solid", "volume"}}}, {"surface", "mesh", "1", nil, map[string]Reference{"volume": {"pores", "volume"}}}}, map[string]Reference{"mesh": {"surface", "mesh"}, "graph": {"growth", "graph"}, "base": {"solid", "volume"}, "volume": {"pores", "volume"}, "field": {"field", "field"}, "direction": {"guide", "direction"}}}
+	return Recipe{1, "Eigenmode branching", d, 42, []Node{{"field", "eigenmode", "1", nil, nil}, {"guide", "gradient", "1", nil, map[string]Reference{"field": {"field", "field"}}}, {"growth", "branching", "1", nil, map[string]Reference{"direction": {"guide", "direction"}}}, {"solid", "solidify", "1", nil, map[string]Reference{"graph": {"growth", "graph"}}}, {"pores", "porous", "1", nil, map[string]Reference{"volume": {"solid", "volume"}}}, {"surface", "mesh", "1", nil, map[string]Reference{"volume": {"pores", "volume"}}}}, map[string]Reference{"mesh": {"surface", "mesh"}, "graph": {"growth", "graph"}, "base": {"solid", "volume"}, "volume": {"pores", "volume"}, "field": {"field", "field"}, "direction": {"guide", "direction"}}, nil}
 }
 func cloneRecipe(r Recipe) Recipe {
 	b, _ := json.Marshal(r)
@@ -213,6 +215,11 @@ func (r *Registry) Compile(recipe Recipe) (Recipe, []Node, error) {
 	}
 	if err := p.Domain.Validate(); err != nil {
 		return p, nil, err
+	}
+	if p.Source != nil {
+		if err := p.Source.Validate(p.Domain); err != nil {
+			return p, nil, err
+		}
 	}
 	if len(p.Nodes) == 0 || len(p.Nodes) > 64 || len(p.Outputs) == 0 {
 		return p, nil, fmt.Errorf("recipe needs 1..64 nodes and outputs")
@@ -229,18 +236,28 @@ func (r *Registry) Compile(recipe Recipe) (Recipe, []Node, error) {
 		if !ok || entry.desc.Version != n.Version {
 			return p, nil, fmt.Errorf("unknown operator/version %s@%s", n.Operator, n.Version)
 		}
+		if p.Source != nil {
+			for key, bounds := range p.Source.Spec.ParameterBounds[n.ID] {
+				schema, ok := entry.desc.Parameters[key]
+				if !ok || bounds.Min < schema.Min || bounds.Max > schema.Max || (schema.Type == "integer" && (bounds.Min != float64(int(bounds.Min)) || bounds.Max != float64(int(bounds.Max)))) {
+					return p, nil, fmt.Errorf("%s: bounds exceed parameter contract for %s", n.ID, key)
+				}
+			}
+		}
 		if n.Params == nil {
 			n.Params = map[string]float64{}
 		}
 		for k, v := range n.Params {
-			schema, ok := entry.desc.Parameters[k]
+			_, ok := entry.desc.Parameters[k]
+			schema := r.parameterFor(p, n, k)
 			if !ok || !finite(v) || v < schema.Min || v > schema.Max || (schema.Type == "integer" && v != float64(int(v))) {
 				return p, nil, fmt.Errorf("%s: invalid parameter %s", n.ID, k)
 			}
 		}
-		for k, s := range entry.desc.Parameters {
+		for k := range entry.desc.Parameters {
+			s := r.parameterFor(p, n, k)
 			if _, ok := n.Params[k]; !ok {
-				n.Params[k] = s.Default
+				n.Params[k] = max(s.Min, min(s.Max, s.Default))
 			}
 		}
 		if len(n.Inputs) != len(entry.desc.Inputs) {
@@ -301,6 +318,19 @@ func (r *Registry) Compile(recipe Recipe) (Recipe, []Node, error) {
 			done[id] = true
 		}
 	}
+	if p.Source != nil {
+		for node := range p.Source.Spec.ParameterBounds {
+			if _, ok := nodes[node]; !ok {
+				return p, nil, fmt.Errorf("parameter bounds name missing node %s", node)
+			}
+		}
+		ref, ok := p.Outputs["reference_volume"]
+		source := nodes[ref.Node]
+		port := r.entries[source.Operator].desc.Outputs[ref.Port]
+		if !ok || port != (Port{"volume", "reference-solid"}) {
+			return p, nil, fmt.Errorf("conditioned recipes must expose a typed reference_volume output")
+		}
+	}
 	sort.Slice(p.Nodes, func(i, j int) bool { return p.Nodes[i].ID < p.Nodes[j].ID })
 	return p, order, nil
 }
@@ -329,53 +359,67 @@ func validName(s string) bool {
 
 // RecipePreset is a reproducible starting pipeline for a geometry family.
 type RecipePreset struct {
- ID string `json:"id"`
- Name string `json:"name"`
- Recipe Recipe `json:"recipe"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Recipe Recipe `json:"recipe"`
 }
+
 func ImplicitRecipe(operator string) Recipe {
- r:=DefaultRecipe()
- r.Name=operator
- r.Nodes=[]Node{
-  {ID:"implicit",Operator:operator,Version:"1"},
-  {ID:"surface",Operator:"mesh",Version:"1",Inputs:map[string]Reference{"volume":{Node:"implicit",Port:"volume"}}},
- }
- r.Outputs=map[string]Reference{
-  "mesh":{Node:"surface",Port:"mesh"},
-  "base":{Node:"implicit",Port:"volume"},
-  "volume":{Node:"implicit",Port:"volume"},
- }
- return r
+	r := DefaultRecipe()
+	r.Name = operator
+	r.Nodes = []Node{
+		{ID: "implicit", Operator: operator, Version: "1"},
+		{ID: "surface", Operator: "mesh", Version: "1", Inputs: map[string]Reference{"volume": {Node: "implicit", Port: "volume"}}},
+	}
+	r.Outputs = map[string]Reference{
+		"mesh":   {Node: "surface", Port: "mesh"},
+		"base":   {Node: "implicit", Port: "volume"},
+		"volume": {Node: "implicit", Port: "volume"},
+	}
+	return r
 }
+
 // HybridRecipe combines independent implicit generators without a graph.
 func HybridRecipe() Recipe {
- r:=DefaultRecipe()
- r.Name="Hybrid implicit composition"
- r.Nodes=[]Node{
-  {ID:"periodic",Operator:"tpms",Version:"1"},
-  {ID:"cells",Operator:"voronoi_foam",Version:"1"},
-  {ID:"combine",Operator:"csg",Version:"1",Inputs:map[string]Reference{
-   "a":{Node:"periodic",Port:"volume"},"b":{Node:"cells",Port:"volume"},
-  }},
-  {ID:"deform",Operator:"warp",Version:"1",Inputs:map[string]Reference{
-   "volume":{Node:"combine",Port:"volume"},
-  }},
-  {ID:"surface",Operator:"mesh",Version:"1",Inputs:map[string]Reference{
-   "volume":{Node:"deform",Port:"volume"},
-  }},
- }
- r.Outputs=map[string]Reference{
-  "mesh":{Node:"surface",Port:"mesh"},
-  "base":{Node:"deform",Port:"volume"},
-  "volume":{Node:"deform",Port:"volume"},
- }
- return r
+	r := DefaultRecipe()
+	r.Name = "Hybrid implicit composition"
+	r.Nodes = []Node{
+		{ID: "periodic", Operator: "tpms", Version: "1"},
+		{ID: "cells", Operator: "voronoi_foam", Version: "1"},
+		{ID: "combine", Operator: "csg", Version: "1", Inputs: map[string]Reference{
+			"a": {Node: "periodic", Port: "volume"}, "b": {Node: "cells", Port: "volume"},
+		}},
+		{ID: "deform", Operator: "warp", Version: "1", Inputs: map[string]Reference{
+			"volume": {Node: "combine", Port: "volume"},
+		}},
+		{ID: "surface", Operator: "mesh", Version: "1", Inputs: map[string]Reference{
+			"volume": {Node: "deform", Port: "volume"},
+		}},
+	}
+	r.Outputs = map[string]Reference{
+		"mesh":   {Node: "surface", Port: "mesh"},
+		"base":   {Node: "deform", Port: "volume"},
+		"volume": {Node: "deform", Port: "volume"},
+	}
+	return r
 }
 func RecipePresets() []RecipePreset {
- return []RecipePreset{
-  {ID:"branching",Name:"Branching / coral",Recipe:DefaultRecipe()},
-  {ID:"tpms",Name:"TPMS / periodic surfaces",Recipe:ImplicitRecipe("tpms")},
-  {ID:"voronoi",Name:"Voronoi / cellular foam",Recipe:ImplicitRecipe("voronoi_foam")},
-  {ID:"hybrid",Name:"Hybrid / composition",Recipe:HybridRecipe()},
- }
+	return []RecipePreset{
+		{ID: "branching", Name: "Branching / coral", Recipe: DefaultRecipe()},
+		{ID: "tpms", Name: "TPMS / periodic surfaces", Recipe: ImplicitRecipe("tpms")},
+		{ID: "voronoi", Name: "Voronoi / cellular foam", Recipe: ImplicitRecipe("voronoi_foam")},
+		{ID: "hybrid", Name: "Hybrid / composition", Recipe: HybridRecipe()},
+		{ID: "bridge", Name: "Bridge / constrained decoration", Recipe: BridgeRecipe()},
+	}
+}
+
+// parameterFor keeps conditioned exploration inside sidecar-declared ranges.
+func (r *Registry) parameterFor(recipe Recipe, node Node, key string) Param {
+	p := r.entries[node.Operator].desc.Parameters[key]
+	if recipe.Source != nil {
+		if bounds, ok := recipe.Source.Spec.ParameterBounds[node.ID][key]; ok {
+			p.Min, p.Max = bounds.Min, bounds.Max
+		}
+	}
+	return p
 }

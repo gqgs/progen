@@ -29,16 +29,18 @@ func (MorphologySpace) Coordinates(m Metrics) (float64, float64) {
 // ImplicitMorphologySpace uses voxel measurements and is intentionally
 // versioned separately from tree-branch descriptors.
 type ImplicitMorphologySpace struct{}
-func (ImplicitMorphologySpace) Coordinates(m Metrics) (float64,float64) {
- return m.SolidFraction,m.SurfaceFraction
+
+func (ImplicitMorphologySpace) Coordinates(m Metrics) (float64, float64) {
+	return m.SolidFraction, m.SurfaceFraction
 }
 func (ImplicitMorphologySpace) Definition() DescriptorDefinition {
- return DescriptorDefinition{
-  Version:"implicit-morphology-v1",
-  Axes:[2]string{"occupied-volume fraction","exposed voxel-face fraction"},
-  Ranges:[2]DescriptorRange{{0,1,false},{0,1,false}},
- }
+	return DescriptorDefinition{
+		Version: "implicit-morphology-v1",
+		Axes:    [2]string{"occupied-volume fraction", "exposed voxel-face fraction"},
+		Ranges:  [2]DescriptorRange{{0, 1, false}, {0, 1, false}},
+	}
 }
+
 type LegacyMorphologySpace struct{}
 
 func (LegacyMorphologySpace) Coordinates(m Metrics) (float64, float64) {
@@ -134,9 +136,13 @@ func better(a, b Candidate) bool {
 	return a.ID < b.ID
 }
 func (e *Engine) descriptorFor(r Recipe) DescriptorSpace {
- if e.Descriptors != nil { return e.Descriptors }
- if _,hasGraph:=r.Outputs["graph"];hasGraph { return MorphologySpace{} }
- return ImplicitMorphologySpace{}
+	if e.Descriptors != nil {
+		return e.Descriptors
+	}
+	if _, hasGraph := r.Outputs["graph"]; hasGraph {
+		return MorphologySpace{}
+	}
+	return ImplicitMorphologySpace{}
 }
 func (e *Engine) Archive(r Recipe) (Archive, error) {
 	all, err := e.List()
@@ -231,7 +237,7 @@ func (e *Engine) mutate(r Recipe, rng *rand.Rand, scale float64, random bool) Re
 		}
 		sort.Strings(keys)
 		for _, key := range keys {
-			s := e.Registry.entries[n.Operator].desc.Parameters[key]
+			s := e.Registry.parameterFor(p, n, key)
 			if !s.Mutable {
 				continue
 			}
@@ -304,6 +310,15 @@ func (e *Engine) Prepare(req RunRequest) (RunRequest, Recipe, error) {
 		r = c.Recipe
 	}
 	p, _, err := e.Registry.Compile(r)
+	if err == nil && p.Source != nil {
+		if req.Kind == "search" {
+			return req, p, fmt.Errorf("conditioned MAP-Elites is a separate milestone; use generate or vary")
+		}
+		if req.Count > p.Source.Spec.Budget.MaxCandidates {
+			return req, p, fmt.Errorf("count exceeds sidecar max_candidates (%d)", p.Source.Spec.Budget.MaxCandidates)
+		}
+		_, _, err = e.sourceBytes(p.Source)
+	}
 	return req, p, err
 }
 func (e *Engine) run(ctx context.Context, request RunRequest, progress func(int, int, string), onSkip func(int, Recipe, error)) ([]*Candidate, error) {
@@ -346,8 +361,12 @@ func (e *Engine) run(ctx context.Context, request RunRequest, progress func(int,
 			})
 			if err != nil {
 				if errors.Is(err, ErrMeshTriangleLimit) {
-					if onSkip != nil { onSkip(i, r, err) }
-					if progress != nil { progress(i+1, req.Count, "skipped") }
+					if onSkip != nil {
+						onSkip(i, r, err)
+					}
+					if progress != nil {
+						progress(i+1, req.Count, "skipped")
+					}
 					continue
 				}
 				return out, err
@@ -400,12 +419,16 @@ func (e *Engine) run(ctx context.Context, request RunRequest, progress func(int,
 					stage := "completed"
 					if err != nil {
 						stage = "skipped"
-						if onSkip != nil { onSkip(i, recipes[i], err) }
+						if onSkip != nil {
+							onSkip(i, recipes[i], err)
+						}
 					} else {
 						out[i] = c
 					}
 					completed++
-					if progress != nil { progress(completed, req.Count, stage) }
+					if progress != nil {
+						progress(completed, req.Count, stage)
+					}
 				}
 				mu.Unlock()
 			}
@@ -433,26 +456,30 @@ send:
 	// Return surviving candidates in request order. A rejected specimen has no
 	// mesh to preview, and must not appear as a nil entry in the CLI output.
 	survivors := make([]*Candidate, 0, len(out))
-	for _, c := range out { if c != nil { survivors = append(survivors, c) } }
+	for _, c := range out {
+		if c != nil {
+			survivors = append(survivors, c)
+		}
+	}
 	return survivors, nil
 }
 
 // CandidateFailure retains enough information to reproduce an oversized
 // specimen without polluting the candidate atlas with an unusable GLB.
 type CandidateFailure struct {
- Index int `json:"index"`
- Reason string `json:"reason"`
- Recipe Recipe `json:"recipe"`
+	Index  int    `json:"index"`
+	Reason string `json:"reason"`
+	Recipe Recipe `json:"recipe"`
 }
 
 // RunRecord records parameter-search randomness separately from generation seeds.
 type RunRecord struct {
-	ID             string     `json:"id"`
-	Request        RunRequest `json:"request"`
-	InitialArchive Archive    `json:"initial_archive"`
-	Status         string     `json:"status"`
-	Created        time.Time  `json:"created"`
-	Finished       time.Time  `json:"finished,omitempty"`
+	ID             string             `json:"id"`
+	Request        RunRequest         `json:"request"`
+	InitialArchive Archive            `json:"initial_archive"`
+	Status         string             `json:"status"`
+	Created        time.Time          `json:"created"`
+	Finished       time.Time          `json:"finished,omitempty"`
 	Candidates     []string           `json:"candidates"`
 	Failures       []CandidateFailure `json:"failures,omitempty"`
 	Error          string             `json:"error,omitempty"`
@@ -461,8 +488,8 @@ type RunRecord struct {
 // Run generates an ordered batch or runs sequential MAP-Elites. Callbacks must
 // return promptly; registration and engine configuration must finish before Run.
 func (e *Engine) Run(ctx context.Context, request RunRequest, progress func(int, int, string)) ([]*Candidate, error) {
- results, _, err := e.RunWithFailures(ctx, request, progress)
- return results, err
+	results, _, err := e.RunWithFailures(ctx, request, progress)
+	return results, err
 }
 
 // RunWithFailures reports candidate-local budget rejections separately from
@@ -507,6 +534,6 @@ func (e *Engine) RunWithFailures(ctx context.Context, request RunRequest, progre
 		failures = append(failures, CandidateFailure{Index: index, Reason: err.Error(), Recipe: recipe})
 	})
 	// Workers may finish in a different order; manifest failures remain stable.
-	sort.Slice(failures, func(i,j int) bool { return failures[i].Index < failures[j].Index })
+	sort.Slice(failures, func(i, j int) bool { return failures[i].Index < failures[j].Index })
 	return results, failures, runErr
 }

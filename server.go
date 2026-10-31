@@ -26,17 +26,17 @@ import (
 var webFiles embed.FS
 
 type Job struct {
-	ID         string     `json:"id"`
-	Request    RunRequest `json:"request"`
-	Status     string     `json:"status"`
-	Completed  int        `json:"completed"`
-	Skipped    int        `json:"skipped"`
-	Total      int        `json:"total"`
-	Stage      string     `json:"stage"`
-	Candidates []string   `json:"candidates"`
+	ID         string             `json:"id"`
+	Request    RunRequest         `json:"request"`
+	Status     string             `json:"status"`
+	Completed  int                `json:"completed"`
+	Skipped    int                `json:"skipped"`
+	Total      int                `json:"total"`
+	Stage      string             `json:"stage"`
+	Candidates []string           `json:"candidates"`
 	Failures   []CandidateFailure `json:"failures,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	Created    time.Time  `json:"created"`
+	Error      string             `json:"error,omitempty"`
+	Created    time.Time          `json:"created"`
 }
 type Server struct {
 	Engine  *Engine
@@ -154,7 +154,54 @@ func (s *Server) Handler() http.Handler {
 		}
 	})
 	mux.HandleFunc("GET /api/operators", func(w http.ResponseWriter, r *http.Request) { respond(w, 200, s.Engine.Registry.Descriptors()) })
+	mux.HandleFunc("POST /api/archetypes", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
+		var input struct {
+			GLB     []byte `json:"glb"`
+			Sidecar []byte `json:"sidecar"`
+		}
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&input); err != nil {
+			problem(w, 400, err)
+			return
+		}
+		var trailing any
+		if err := dec.Decode(&trailing); err != io.EOF {
+			problem(w, 400, fmt.Errorf("expected one import object"))
+			return
+		}
+		recipe, err := s.Engine.ImportArchetype(r.Context(), input.GLB, input.Sidecar)
+		if err != nil {
+			problem(w, 400, err)
+			return
+		}
+		respond(w, 200, recipe)
+	})
 	mux.HandleFunc("GET /api/recipes", func(w http.ResponseWriter, r *http.Request) { respond(w, 200, RecipePresets()) })
+	mux.HandleFunc("POST /api/reference", func(w http.ResponseWriter, r *http.Request) {
+		var recipe Recipe
+		if err := decode(w, r, &recipe); err != nil {
+			problem(w, 400, err)
+			return
+		}
+		p, _, err := s.Engine.Registry.Compile(recipe)
+		if err != nil {
+			problem(w, 400, err)
+			return
+		}
+		data, _, err := s.Engine.sourceBytes(p.Source)
+		if err != nil {
+			problem(w, 400, err)
+			return
+		}
+		mesh, _, err := DecodeArchetypeGLB(r.Context(), data, p.Source.Spec.Transform, p.Domain)
+		if err != nil {
+			problem(w, 400, err)
+			return
+		}
+		respond(w, 200, Artifact{Kind: "mesh", Mesh: mesh})
+	})
 	mux.HandleFunc("GET /api/recipe", func(w http.ResponseWriter, r *http.Request) {
 		p, _, err := s.Engine.Registry.Compile(DefaultRecipe())
 		if err != nil {
@@ -195,7 +242,8 @@ func (s *Server) Handler() http.Handler {
 		rng := mathrand.New(mathrand.NewPCG(binary.LittleEndian.Uint64(entropy[:8]), binary.LittleEndian.Uint64(entropy[8:])))
 		p.Seed = Seed(rng.Uint64())
 		for i, node := range p.Nodes {
-			for key, schema := range s.Engine.Registry.entries[node.Operator].desc.Parameters {
+			for key := range s.Engine.Registry.entries[node.Operator].desc.Parameters {
+				schema := s.Engine.Registry.parameterFor(p, node, key)
 				value := schema.Min + rng.Float64()*(schema.Max-schema.Min)
 				if schema.Type == "integer" {
 					value = schema.Min + float64(rng.IntN(int(schema.Max-schema.Min)+1))
@@ -204,7 +252,11 @@ func (s *Server) Handler() http.Handler {
 				p.Nodes[i].Params[key] = value
 			}
 		}
-		p.Domain.Resolution = []int{32, 64, 96, 128}[rng.IntN(4)]
+		if p.Source != nil {
+			p.Domain.Resolution = []int{32, 64}[rng.IntN(2)]
+		} else {
+			p.Domain.Resolution = []int{32, 64, 96, 128}[rng.IntN(4)]
+		}
 		p, _, err = s.Engine.Registry.Compile(p)
 		if err != nil {
 			problem(w, 400, err)
@@ -338,9 +390,16 @@ func (s *Server) Handler() http.Handler {
 		if presetID := r.URL.Query().Get("preset"); presetID != "" {
 			found := false
 			for _, preset := range RecipePresets() {
-				if preset.ID == presetID { recipe = preset.Recipe; found = true; break }
+				if preset.ID == presetID {
+					recipe = preset.Recipe
+					found = true
+					break
+				}
 			}
-			if !found { problem(w, 400, fmt.Errorf("unknown preset")); return }
+			if !found {
+				problem(w, 400, fmt.Errorf("unknown preset"))
+				return
+			}
 		}
 		if id := r.URL.Query().Get("candidate"); id != "" {
 			c, err := s.Engine.Get(id)
@@ -473,7 +532,9 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			j.Completed = done
-			if node == "skipped" { j.Skipped++ }
+			if node == "skipped" {
+				j.Skipped++
+			}
 			j.Total = total
 			j.Stage = node
 		})
