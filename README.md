@@ -198,3 +198,7 @@ Comparison at source base `ca8ab3ac9272fa2207a460939ee0dabd3167b991`:
 
 The generated comparison uses the existing generators unchanged and a small test recipe (base growth settings: 70 attractions, 60 iterations, 300 vertices). It is not a default-resolution generation benchmark or an inspection of the user’s collection. No preexisting candidate records were available in the patch workspace. Occupancy measures descriptor coverage, not visual diversity; comparisons are meaningful only with the same candidates, validity gates and feedback.
 
+
+## Volume-first geometry families
+
+The engine requires `mesh`, `base`, and `volume` outputs for default candidate validation, but treats graph/skeleton as optional. Family presets are available through `GET /api/recipes` and the geometry selector. Parameters exposed by additional operator descriptors are editable in the UI; imported recipes retain their pipeline. Skeleton overlay is disabled for graph-free outputs.
