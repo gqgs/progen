@@ -1,0 +1,105 @@
+{
+  "baseline": "93c41692b50cf2190879e62957a807c18468edbb",
+  "scope": "viewer fragment lighting normals and roughness only",
+  "checks": {
+    "go_test": "passed (62.686s)",
+    "go_vet": "passed",
+    "frontend_syntax_build": "passed",
+    "existing_material_browser": "passed",
+    "implicit_browser": "passed",
+    "focused_material_detail_browser": "passed, including CI mode without baseline",
+    "api_mutations_from_preview": false,
+    "candidate_and_glb_bytes_unchanged": true,
+    "zip_entry_bytes_unchanged": true,
+    "atlas_thumbnails_unchanged": true,
+    "silhouette_unchanged": true,
+    "metal_glass_pixels_unchanged_vs_baseline": true
+  },
+  "detail_metrics": {
+    "clay": {
+      "normalStd": [
+        0.7213923221523477,
+        0.813010194985288,
+        0
+      ],
+      "roughnessStd": [
+        3.37807801491431,
+        3.37808207973945,
+        3.378026048505703
+      ]
+    },
+    "stone": {
+      "normalStd": [
+        2.0671942019541754,
+        2.4664025398770537,
+        0
+      ],
+      "roughnessStd": [
+        10.823948923560279,
+        10.823953542945466,
+        10.823865504956435
+      ],
+      "minifiedNormalStd": [
+        0,
+        0,
+        0
+      ],
+      "canonicalAlignmentError": 0
+    },
+    "wood": {
+      "normalStd": [
+        0.4804313554961719,
+        3.8347099078683082,
+        0
+      ],
+      "roughnessStd": [
+        12.307995228705913,
+        12.308001322304426,
+        12.307999714387647
+      ],
+      "minifiedNormalStd": [
+        0.0282729552752816,
+        0.10089090933237428,
+        0
+      ],
+      "canonicalAlignmentError": 0
+    },
+    "metal": {
+      "normalStd": [
+        0,
+        0,
+        0
+      ],
+      "roughnessStd": [
+        0,
+        0,
+        0
+      ]
+    },
+    "glass": {
+      "normalStd": [
+        0,
+        0,
+        0
+      ],
+      "roughnessStd": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "images": {
+    "contact-sheet.png": "d0005b7a2893c2e2077ca8257813115ea9c460fe72aabd2ec6ccdc28d30d74bf",
+    "after-wood-deck.png": "055480fb22333ff9dc4ecf48f36983f15ce130fbdd7de82c215bb00d09c13d17",
+    "after-stone-deck.png": "b1087ea90699274c4dd77edab48e05a5ee041feef8405797f366bb07bad22e19",
+    "before-stone-deck.png": "9362f4f98dff45ec7046ff0722d4366a6508a7efc89b76aba6d7d70ded536d22",
+    "before-wood-deck.png": "1d3176ce980ddda1deb105eb40883c7af96250321a008c161a4cb6c3912eb3b6"
+  },
+  "browser_errors": [],
+  "limitations": [
+    "fragment shading detail only; no collision or export relief",
+    "no GPU-independent pixel identity or device frame-rate claim",
+    "owner visual review pending"
+  ]
+}

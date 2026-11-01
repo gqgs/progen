@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { unzipSync } from "three/addons/libs/fflate.module.js";
 
 const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "progen-material-ui-"));
 const evidenceDir = process.env.PROGEN_EVIDENCE_DIR || workspace;
@@ -69,6 +70,8 @@ try {
   const before = await Promise.all(paths.map(bytes));
   const provenance = await page.locator("#provenance").textContent();
   const constraints = await page.locator("#constraintStatus").textContent();
+  await page.waitForFunction(() => [...document.querySelectorAll("#gallery .card img")].every(img => img.complete && img.src.startsWith("data:")));
+  const thumbnailsBefore = await page.locator("#gallery .card img").evaluateAll(images => images.map(img => img.src));
   const writesBefore = writes.length;
   const hashes = [];
   for (const preset of ["clay", "stone", "wood", "metal", "glass"]) {
@@ -91,12 +94,17 @@ try {
   await capture("glass-light");
   await page.locator("#previewBackground").selectOption("#101418");
   await capture("glass-dark");
+  assert.deepEqual(await page.locator("#gallery .card img").evaluateAll(images => images.map(img => img.src)), thumbnailsBefore, "viewer materials changed atlas thumbnails");
   assert.equal(writes.length, writesBefore, "preview controls wrote to API");
   assert.equal(await page.locator("#provenance").textContent(), provenance);
   assert.equal(await page.locator("#constraintStatus").textContent(), constraints);
   const after = await Promise.all(paths.map(bytes));
-  before.forEach((b, i) => assert.equal(digest(b), digest(after[i]), paths[i] + " changed"));
-  report.checks.push("five visibly distinct presets; reference/result/overlay under every material; deterministic round trip; no API writes; byte-identical candidate JSON, GLB and export ZIP; unchanged validation/provenance");
+  before.slice(0,2).forEach((b, i) => assert.equal(digest(b), digest(after[i]), paths[i] + " changed"));
+  // ZIP entry order is not stable: the exporter ranges a Go map for the two
+  // manifests. Compare every uncompressed entry byte-for-byte, not its wrapper.
+  const zipEntries = archive => Object.fromEntries(Object.entries(unzipSync(archive)).sort(([a],[b]) => a.localeCompare(b)).map(([name,data]) => [name,digest(data)]));
+  assert.deepEqual(zipEntries(before[2]),zipEntries(after[2]), "export ZIP entry bytes changed");
+  report.checks.push("five visibly distinct presets; reference/result/overlay under every material; deterministic round trip; no API writes; byte-identical candidate JSON, GLB and export ZIP entries; unchanged validation/provenance and atlas thumbnails");
   // Camera remains interactive and is not reset by material changes.
   await page.locator("#materialPreset").selectOption("wood");
   const rect = await page.locator("#viewer canvas").boundingBox();
