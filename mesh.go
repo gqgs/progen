@@ -13,6 +13,10 @@ import (
 // ErrMeshTriangleLimit is a candidate-local complexity rejection, not a fatal batch error.
 var ErrMeshTriangleLimit = errors.New("mesh exceeds two million triangles")
 
+// ErrMeshPrecision is a candidate-local rejection when export precision cannot
+// be repaired without compromising the canonical surface.
+var ErrMeshPrecision = errors.New("unsafe mesh at GLB precision")
+
 const maxMeshTriangles = 2_000_000
 
 type Tetrahedra struct{}
@@ -124,7 +128,7 @@ func (Tetrahedra) Mesh(ctx context.Context, v Volume) (*Mesh, error) {
 			m.Normals[i] = Vec3{0, 1, 0}
 		}
 	}
-	return m, nil
+	return repairGLBCollapse(m, d)
 }
 func ValidateMesh(m *Mesh, d Domain) error {
 	if m == nil || len(m.Positions) == 0 || len(m.Indices) == 0 || len(m.Indices)%3 != 0 || len(m.Normals) != len(m.Positions) {

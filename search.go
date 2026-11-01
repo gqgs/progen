@@ -360,7 +360,7 @@ func (e *Engine) run(ctx context.Context, request RunRequest, progress func(int,
 				}
 			})
 			if err != nil {
-				if errors.Is(err, ErrMeshTriangleLimit) {
+				if errors.Is(err, ErrMeshTriangleLimit) || errors.Is(err, ErrMeshPrecision) {
 					if onSkip != nil {
 						onSkip(i, r, err)
 					}
@@ -410,7 +410,7 @@ func (e *Engine) run(ctx context.Context, request RunRequest, progress func(int,
 					}
 				})
 				mu.Lock()
-				if err != nil && !errors.Is(err, ErrMeshTriangleLimit) {
+				if err != nil && !(errors.Is(err, ErrMeshTriangleLimit) || errors.Is(err, ErrMeshPrecision)) {
 					if first == nil {
 						first = err
 						cancel()

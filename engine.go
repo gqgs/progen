@@ -216,7 +216,7 @@ func NewEngine(workspace string) (*Engine, error) {
 			return nil, err
 		}
 	}
-	build := EngineVersion + "/" + runtime.Version()
+	build := EngineVersion + "/mesh-f32-weld-1/" + runtime.Version()
 	if exe, err := os.Executable(); err == nil {
 		if f, err := os.Open(exe); err == nil {
 			h := sha256.New()
