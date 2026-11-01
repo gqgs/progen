@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { applyPreview, studioEnvironment } from "./material-preview.js";
 const $ = (id) => document.getElementById(id);
 let operatorSpecs = [], presetRecipes = [];
 let recipeChangeEpoch = 0, recipeRandomizing = false, activeFamily = "branching";
@@ -103,23 +104,28 @@ async function randomizeAllAttributes(baseRecipe) {
 }
 for (const id of Object.keys(bindings)) $(id).addEventListener("input", () => $(id + "Value").value = $(id).value);
 const scene = new THREE.Scene();
-scene.add(new THREE.HemisphereLight(15398892, 3293752, 2));
-const light = new THREE.DirectionalLight(16774361, 3);
+scene.add(new THREE.HemisphereLight(15398892, 3293752, .8));
+const light = new THREE.DirectionalLight(16774361, 2);
 light.position.set(3, 5, 4);
 scene.add(light);
-const rim = new THREE.DirectionalLight(9105617, 2);
+const rim = new THREE.DirectionalLight(9105617, 1);
 rim.position.set(-3, 1, -2);
 scene.add(rim);
 const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 100);
 camera.position.set(2.8, 1.8, 3.5);
-let renderer, controls, model, graphObject, referenceObject;
+let renderer, controls, model, graphObject, referenceObject, environment;
+let previewDomainSize = 1;
 try {
   renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setClearColor(1516060, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.2;
+  renderer.toneMappingExposure = 1;
+  environment = studioEnvironment(renderer);
+  scene.environment = environment.texture;
+  scene.environmentIntensity = .8;
+  scene.background = new THREE.Color(0x303840);
   $("viewer").append(renderer.domElement);
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -358,7 +364,8 @@ async function select(c) {
     return;
   }
   model = gltf.scene;
-  if (c.recipe.source) model.traverse(o=>{if(o.isMesh){o.material.color.set(0x488f82);o.material.roughness=.75;}});
+  setPreviewDomain(c.recipe);
+  applyPreview(model, $("materialPreset").value, previewDomainSize);
   scene.add(model);
   frame(model, camera, controls);
   $("viewerHint").classList.add("hidden");
@@ -383,7 +390,7 @@ async function select(c) {
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   graphObject = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 8716256, depthTest: false, transparent: true, opacity: 0.8 }));
   graphObject.renderOrder = 10;
-  graphObject.visible = $("graphToggle").checked;
+  graphObject.visible = $("graphToggle").checked && $("comparison").value !== "reference";
   scene.add(graphObject);
 }
 
@@ -395,16 +402,27 @@ function artifactMesh(mesh, reference = false) {
   const material = new THREE.MeshStandardMaterial({color: reference ? 0xd6a76d : 0x70b7a9,roughness:.65,side:THREE.DoubleSide});
   return new THREE.Mesh(geometry,material);
 }
+function setPreviewDomain(r) {
+  const b = r.domain.bounds;
+  previewDomainSize = Math.max(b.Max.X-b.Min.X,b.Max.Y-b.Min.Y,b.Max.Z-b.Min.Z);
+}
 function renderComparison() {
   const mode = $("comparison").value;
   if (model) model.visible = mode !== "reference";
+  if (graphObject) graphObject.visible = mode !== "reference" && $("graphToggle").checked;
   if (referenceObject) {
     referenceObject.visible = mode !== "result" || !model;
-    referenceObject.material.wireframe = mode === "overlay";
-    referenceObject.material.transparent = mode === "overlay";
-    referenceObject.material.opacity = mode === "overlay" ? .28 : 1;
+    applyPreview(referenceObject, $("materialPreset").value, previewDomainSize, mode === "overlay");
   }
 }
+$("materialPreset").onchange = () => {
+  applyPreview(model, $("materialPreset").value, previewDomainSize);
+  renderComparison();
+  $("glassHelp").hidden = $("materialPreset").value !== "glass";
+};
+$("previewBackground").onchange = () => {
+  scene.background = new THREE.Color($("previewBackground").value);
+};
 $("comparison").onchange = renderComparison;
 async function previewReference() {
   const epoch = ++selectionEpoch;
@@ -412,6 +430,7 @@ async function previewReference() {
   if (epoch !== selectionEpoch || !renderer) return;
   dispose(model);dispose(graphObject);dispose(referenceObject);
   model = graphObject = null;
+  setPreviewDomain(readControls());
   referenceObject = artifactMesh(artifact.mesh,true);scene.add(referenceObject);
   frame(referenceObject,camera,controls);
   $("comparison").disabled = false;$("comparison").value = "reference";
@@ -438,7 +457,7 @@ $("importArchetype").onclick = task(async () => {
 });
 
 $("graphToggle").onchange = () => {
-  if (graphObject) graphObject.visible = $("graphToggle").checked;
+  if (graphObject) graphObject.visible = $("graphToggle").checked && $("comparison").value !== "reference";
 };
 async function feedback(state) {
   if (state === "rejected") {

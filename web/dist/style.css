@@ -10,3 +10,8 @@
 [hidden] { display:none !important; }
 #operatorParams label { margin-top: .65rem; }
 #operatorParams input[type="number"] { width:100%; }
+
+.material-preview { border-top:1px solid var(--line); padding-top:12px; margin-bottom:20px; }
+.material-preview select { width:100%; }
+.material-preview .muted { font-size:11px; line-height:1.5; }
+.viewer-options { flex-wrap:wrap; gap:8px; }
