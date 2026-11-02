@@ -56,7 +56,7 @@ function syncControls() {
     for (const [param, spec] of Object.entries(desc.parameters || {})) {
       if (fixed.has(node.operator+":"+param)) continue;
       const label = document.createElement("label");
-      label.textContent = node.operator + " · " + param;
+      label.textContent = node.operator === "floor_relief" ? (param === "depth" ? "Floor depth (m, up to 0.06)" : "Floor relief strength (0 = flat)") : node.operator + " · " + param;
       const input = document.createElement("input");
       const bounds = recipe.source?.spec.parameter_bounds?.[node.id]?.[param] || spec;
       input.type = "number"; input.min = bounds.min; input.max = bounds.max;

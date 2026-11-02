@@ -409,6 +409,7 @@ func RecipePresets() []RecipePreset {
 		{ID: "tpms", Name: "TPMS / periodic surfaces", Recipe: ImplicitRecipe("tpms")},
 		{ID: "voronoi", Name: "Voronoi / cellular foam", Recipe: ImplicitRecipe("voronoi_foam")},
 		{ID: "hybrid", Name: "Hybrid / composition", Recipe: HybridRecipe()},
+		{ID: "bridge_relief", Name: "Bridge / floor relief (experimental)", Recipe: BridgeReliefRecipe()},
 		{ID: "bridge", Name: "Bridge / constrained decoration", Recipe: BridgeRecipe()},
 	}
 }
