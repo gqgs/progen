@@ -56,7 +56,7 @@ function syncControls() {
     for (const [param, spec] of Object.entries(desc.parameters || {})) {
       if (fixed.has(node.operator+":"+param)) continue;
       const label = document.createElement("label");
-      label.textContent = node.operator + " · " + param;
+      label.textContent = node.operator === "structural_deck" ? (param === "density" ? "Structural floor density (batch varies)" : "Structural floor contour (batch varies)") : node.operator === "floor_relief" ? (param === "depth" ? "Floor depth (m, up to 0.06)" : "Floor relief strength (0 = flat)") : node.operator + " · " + param;
       const input = document.createElement("input");
       const bounds = recipe.source?.spec.parameter_bounds?.[node.id]?.[param] || spec;
       input.type = "number"; input.min = bounds.min; input.max = bounds.max;
@@ -214,7 +214,7 @@ async function drawGallery() {
     const compositionLabel = c.artifacts?.graph
       ? `${Math.round(c.metrics.porosity * 100)}% porous`
       : `${Math.round(c.metrics.solid_fraction * 100)}% filled`;
-    sub.textContent = c.valid ? `${c.metrics.triangles.toLocaleString()} faces · ${compositionLabel}` : "Invalid geometry";
+    sub.textContent = c.valid ? `${c.metrics.triangles.toLocaleString()} faces · ${c.recipe.source?.spec.deck_policy ? "Exploratory · walking not certified" : compositionLabel}` : "Invalid geometry";
     const badge = document.createElement("span");
     badge.className = "badge";
     badge.textContent = c.feedback === "favorite" ? "\u2605" : c.feedback === "rejected" ? "\xD7" : "";
@@ -321,10 +321,13 @@ function updateSelection() {
     }
   }
   $("constraintStatus").classList.toggle("hidden",!c.recipe.source);
-  if (c.recipe.source) $("constraintStatus").textContent = c.valid
+  if (c.recipe.source?.spec.deck_policy === "structural-experiment") $("constraintStatus").textContent = c.valid
+    ? `LESS PROTECTED EXPERIMENT · mesh/source constraints passed; not a game-ready walking floor. Walking-strip diagnostics: ${c.walking_checks?.evaluated ? (c.walking_checks.passed ? "sampled checks passed (not certification)" : c.walking_checks.problems.join("; ")) : "unavailable"}.`
+    : `Experimental mesh/source failures: ${c.problems.join("; ")}`;
+  else if (c.recipe.source) $("constraintStatus").textContent = c.valid
     ? `Deck, endpoints, clearance and editable-region checks passed at ${c.recipe.domain.resolution}³ (floor tolerance ${c.recipe.source.spec.traversal.surface_tolerance} m).`
     : `Constraint failures: ${c.problems.join("; ")}`;
-  $("provenance").textContent = JSON.stringify({ id: c.id, parent: c.parent, engine: c.engine, valid: c.valid, problems: c.problems, nodes: c.nodes, recipe: c.recipe }, null, 2);
+  $("provenance").textContent = JSON.stringify({ id: c.id, parent: c.parent, engine: c.engine, valid: c.valid, problems: c.problems, walking_checks: c.walking_checks, nodes: c.nodes, recipe: c.recipe }, null, 2);
   if (!c.valid) showError(new Error(c.problems.join("; ")));
 }
 async function select(c) {

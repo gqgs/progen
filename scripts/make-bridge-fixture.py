@@ -23,3 +23,17 @@ s['parameter_bounds'] = {
  'deform': {'amplitude':{'min':0,'max':.04},'frequency':{'min':1,'max':2}}
 }
 (p/'bridge.constraints.json').write_text(json.dumps(s,indent=2)+'\n')
+
+# Opt-in floor contract; preserve the original source bytes and recipe behavior.
+s['floor_relief']={'region':box((-3.9,-.32,-1.02),(3.9,.24,1.02))}
+s['parameter_bounds']['floor']={'strength':{'min':0,'max':1},'depth':{'min':0,'max':.06}}
+(p/'bridge-relief.constraints.json').write_text(json.dumps(s,indent=2)+'\n')
+
+# Less-protected structural experiment has its own immutable source contract.
+s=json.loads((p/'bridge.constraints.json').read_text())
+s['deck_policy']='structural-experiment'
+s['required']=[box((-3.6,-.33,-.18),(3.6,-.12,.18))]+[a['region'] for a in s['anchors']]
+s['forbidden']=[box((-3.7,.65,-.35),(3.7,1.8,.35))]
+s['editable'].append(box((-3.9,-.75,-1.08),(3.9,.55,1.08)))
+s['parameter_bounds']['deck']={'density':{'min':0,'max':.18},'contour':{'min':0,'max':1}}
+(p/'bridge-structural.constraints.json').write_text(json.dumps(s,indent=2)+'\n')

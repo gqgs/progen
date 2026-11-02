@@ -36,6 +36,12 @@ var bridgeGLB []byte
 //go:embed examples/bridge.constraints.json
 var bridgeSidecar []byte
 
+//go:embed examples/bridge-relief.constraints.json
+var bridgeReliefSidecar []byte
+
+//go:embed examples/bridge-structural.constraints.json
+var bridgeStructuralSidecar []byte
+
 func sourceRecipe(glb, sidecar []byte) (Recipe, error) {
 	s, err := ParseConstraintSpec(sidecar)
 	if err != nil {
@@ -60,6 +66,12 @@ func sourceRecipe(glb, sidecar []byte) (Recipe, error) {
 		}
 	}
 	r.Outputs = map[string]Reference{"mesh": {"surface", "mesh"}, "base": {"reference", "volume"}, "volume": {"condition", "volume"}, "reference": {"reference", "mesh"}, "reference_volume": {"reference", "volume"}, "required": {"reference", "required"}, "forbidden": {"reference", "forbidden"}, "editable": {"reference", "editable"}}
+	if s.FloorRelief != nil {
+		r = withFloorRelief(r)
+	}
+	if s.DeckPolicy == "structural-experiment" {
+		r = withStructuralDeck(r)
+	}
 	return r, nil
 }
 func BridgeRecipe() Recipe {
@@ -173,7 +185,14 @@ func (e *Engine) sourceBytes(s *ConditionedSource) ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	sidecar, err := read(s.SidecarSHA256, ".json", bridgeSidecar, 64<<10)
+	builtinSidecar := bridgeSidecar
+	if s.SidecarSHA256 == sourceDigest(bridgeReliefSidecar) {
+		builtinSidecar = bridgeReliefSidecar
+	}
+	if s.SidecarSHA256 == sourceDigest(bridgeStructuralSidecar) {
+		builtinSidecar = bridgeStructuralSidecar
+	}
+	sidecar, err := read(s.SidecarSHA256, ".json", builtinSidecar, 64<<10)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -215,6 +234,13 @@ func (op archetypeOperator) Run(ctx context.Context, d Domain, _ uint64, _ Input
 	return Outputs{"mesh": {Kind: "mesh", Mesh: mesh}, "volume": {Kind: "volume", Volume: v}, "required": {Kind: "volume", Volume: required}, "forbidden": {Kind: "volume", Volume: forbidden}, "editable": {Kind: "volume", Volume: editable}}, nil
 }
 func registerConditioned(r *Registry) {
+	registerStructuralDeck(r)
+	if err := r.Register(Descriptor{ID: "floor_relief", Version: "1", Inputs: map[string]Port{"volume": {"volume", "solid"}, "field": {"volume", "solid"}}, Outputs: map[string]Port{"volume": {"volume", "solid"}}, Parameters: map[string]Param{"strength": parameter(1, 0, 1, false, false), "depth": parameter(.06, 0, .06, false, false)}, Requirements: "CPU; source-authorized bounded floor deformation from shared wall field"}, func(p map[string]float64) (Operator, error) {
+		return floorReliefOperator{strength: p["strength"], depth: p["depth"]}, nil
+	}); err != nil {
+		panic(err)
+	}
+
 	volume := Port{"volume", "solid"}
 	reference := Port{"volume", "reference-solid"}
 	required := Port{"volume", "required-solid"}
@@ -244,7 +270,11 @@ func EncodeCandidateGLB(mesh *Mesh, c *Candidate) ([]byte, error) {
 	if c.Recipe.Source == nil {
 		return raw, nil
 	}
-	return glbWithExtras(raw, map[string]any{"progen": map[string]any{"id": c.ID, "engine": c.Engine, "build": c.Build, "recipe": c.Recipe}})
+	provenance := map[string]any{"id": c.ID, "engine": c.Engine, "build": c.Build, "recipe": c.Recipe}
+	if c.WalkingChecks != nil {
+		provenance["walking_checks"] = c.WalkingChecks
+	}
+	return glbWithExtras(raw, map[string]any{"progen": provenance})
 }
 
 // This only rewrites our own trusted GLB JSON chunk, never imported GLB data.
