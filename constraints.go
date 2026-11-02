@@ -13,6 +13,7 @@ import (
 // Transform applies only to GLB coordinates. All boxes and endpoints are already
 // expressed in normalized space. Regions are unions of axis-aligned boxes.
 type ConstraintSpec struct {
+	DeckPolicy      string                               `json:"deck_policy,omitempty"`
 	FloorRelief     *FloorReliefSpec                     `json:"floor_relief,omitempty"`
 	Version         int                                  `json:"version"`
 	Frame           string                               `json:"frame"`
@@ -142,6 +143,12 @@ func (s ConstraintSpec) Validate() error {
 				}
 			}
 		}
+	}
+	if s.DeckPolicy != "" && s.DeckPolicy != "structural-experiment" {
+		return fmt.Errorf("unknown deck policy")
+	}
+	if s.DeckPolicy != "" && (s.FloorRelief != nil || len(s.Anchors) < 2) {
+		return fmt.Errorf("structural deck requires endpoint anchors and a separate source contract")
 	}
 	if f := s.FloorRelief; f != nil {
 		if !constraintBoxValid(f.Region, s.Domain.Box) || a.Z != 0 || b.Z != 0 || a.X >= b.X || a.Y != 0 || t.Width != 1.2 || t.SurfaceTolerance != .1 || f.Region.Min.Y > -.24 || f.Region.Max.Y < .18 {
@@ -304,9 +311,9 @@ func ValidateConditioned(ctx context.Context, s ConstraintSpec, reference, resul
 	if err != nil {
 		return []string{err.Error()}, nil
 	}
-	if s.FloorRelief != nil {
+	if s.FloorRelief != nil || s.DeckPolicy != "" {
 		if err := validateClosedSurface(mesh); err != nil {
-			return []string{"floor relief requires a closed manifold surface: " + err.Error()}, nil
+			return []string{"experimental floor requires a closed manifold surface: " + err.Error()}, nil
 		}
 	}
 	required, forbidden, editable, err := s.Masks(ctx, d)
@@ -436,11 +443,21 @@ func ValidateConditioned(ctx context.Context, s ConstraintSpec, reference, resul
 			problems = append(problems, fmt.Sprintf("mesh cuts anchor %s attachment between grid samples", s.Anchors[j].Name))
 		}
 	}
-	traversalProblems, err := validateTraversal(ctx, s.Traversal, result, mesh)
-	if err != nil {
-		return nil, err
+	if s.DeckPolicy == "structural-experiment" {
+		connected, err := connectedAnchors(ctx, s, result)
+		if err != nil {
+			return nil, err
+		}
+		if !connected {
+			problems = append(problems, "structural deck endpoints are not connected through solid")
+		}
+	} else {
+		traversalProblems, err := validateTraversal(ctx, s.Traversal, result, mesh)
+		if err != nil {
+			return nil, err
+		}
+		problems = append(problems, traversalProblems...)
 	}
-	problems = append(problems, traversalProblems...)
 	return problems, nil
 }
 

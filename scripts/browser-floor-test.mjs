@@ -66,6 +66,45 @@ try {
   await fs.writeFile(prefix+".glb",glb);
   evidence.cases.push({resolution,strength,depth,id:c.id,glb:prefix+".glb",screenshot:prefix+".png",validator:{errors:result.issues.numErrors,warnings:result.issues.numWarnings}});
  }
+ // Switch to the explicitly less-protected contract, then back to strict.
+ for(const family of ["bridge_structural","bridge_relief"]){
+  await page.locator("#preset").selectOption(family);
+  const control=family==="bridge_structural"?"deck":"floor";
+  await page.waitForFunction(node=>!!document.querySelector('input[data-node="'+node+'"]')&&!document.querySelector("#generate").disabled,control);
+  const recipe=structuredClone(presets.find(p=>p.id===family).recipe);
+  for(const node of recipe.nodes){const n=exact.nodes.find(n=>n.id===node.id);if(n)node.params=n.params;}
+  const ready=await(await fetch(base+"/api/validate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(recipe)})).json();
+  for(const node of ready.nodes)for(const [key,value]of Object.entries(node.params||{})){
+   const input=page.locator('#operatorParams input[data-node="'+node.id+'"][data-param="'+key+'"]');if(await input.count())await input.fill(String(value));
+  }
+  await page.locator("#seed").fill(exact.seed);await page.locator("#count").fill("1");
+  for(const resolution of family==="bridge_structural"?[32,64]:[32]){
+   await page.locator("#resolution").selectOption(String(resolution));
+   const response=page.waitForResponse(r=>r.url()===base+"/api/jobs"&&r.request().method()==="POST");
+   await page.locator("#generate").click();const job=await(await response).json();let done;
+   for(let i=0;i<240;i++){done=await(await fetch(base+"/api/jobs/"+job.id)).json();assert.ok(!["failed","cancelled"].includes(done.status),JSON.stringify(done));if(done.status==="completed")break;await sleep(500);}
+   assert.equal(done.status,"completed");assert.equal(done.candidates.length,1,JSON.stringify(done));
+   const c=await(await fetch(base+"/api/candidates/"+done.candidates[0])).json();assert.ok(c.valid,JSON.stringify(c.problems));
+   await page.locator('.card[data-id="'+c.id+'"]').click();
+   await page.waitForFunction(id=>document.querySelector("#selectedId").textContent.includes(id.slice(0,16))&&document.querySelector("#viewerHint").classList.contains("hidden"),c.id);
+   const status=await page.locator("#constraintStatus").innerText();
+   if(family==="bridge_structural"){
+    assert.equal(c.walking_checks.evaluated,true);assert.equal(c.walking_checks.passed,false);
+    assert.match(status,/LESS PROTECTED/);assert.match(status,/not a game-ready/);assert.ok(c.walking_checks.problems.length>0);
+   }else{assert.equal(c.walking_checks,undefined);assert.match(status,/Deck, endpoints, clearance/);assert.doesNotMatch(status,/LESS PROTECTED/);}
+   const glb=new Uint8Array(await(await fetch(base+'/api/candidates/'+c.id+'/asset.glb')).arrayBuffer());
+   const result=await validator.validateBytes(glb);assert.equal(result.issues.numErrors,0,JSON.stringify(result.issues.messages));
+   const size=new DataView(glb.buffer,glb.byteOffset).getUint32(12,true);const doc=JSON.parse(new TextDecoder().decode(glb.slice(20,20+size)));
+   if(family==="bridge_structural")assert.deepEqual(doc.extras.progen.walking_checks,c.walking_checks);
+   const prefix=path.join(workspace,family+"-"+resolution);await fs.writeFile(prefix+".glb",glb);await page.locator("#viewer").screenshot({path:prefix+".png"});
+   evidence.cases.push({family,resolution,id:c.id,walking:c.walking_checks,glb:prefix+".glb",screenshot:prefix+".png",validator:{errors:result.issues.numErrors,warnings:result.issues.numWarnings}});
+  }
+ }
+ const cancelRecipe=structuredClone(presets.find(p=>p.id==="bridge_structural").recipe);cancelRecipe.domain.resolution=64;
+ const job=await(await fetch(base+"/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:"generate",recipe:cancelRecipe,count:16,workers:1,search_seed:"991"})})).json();
+ assert.equal((await fetch(base+"/api/jobs/"+job.id,{method:"DELETE"})).status,202);
+ let cancelled;for(let i=0;i<120;i++){cancelled=await(await fetch(base+"/api/jobs/"+job.id)).json();if(cancelled.status==="cancelled")break;await sleep(100);}
+ assert.equal(cancelled.status,"cancelled",JSON.stringify(cancelled));evidence.cancelledJob=job.id;
  assert.deepEqual(evidence.errors,[]);
  console.log(JSON.stringify(evidence,null,2));
 } catch(e){console.error(logs);throw e;} finally {

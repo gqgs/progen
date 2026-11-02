@@ -58,19 +58,20 @@ type Metrics struct {
 	Triangles         int     `json:"triangles"`
 }
 type Candidate struct {
-	ID           string                 `json:"id"`
-	Parent       string                 `json:"parent,omitempty"`
-	Recipe       Recipe                 `json:"recipe"`
-	Engine       string                 `json:"engine"`
-	Build        string                 `json:"build"`
-	Artifacts    map[string]ArtifactRef `json:"artifacts"`
-	Nodes        []NodeRecord           `json:"nodes"`
-	Metrics      Metrics                `json:"metrics"`
-	Valid        bool                   `json:"valid"`
-	Problems     []string               `json:"problems"`
-	Feedback     string                 `json:"feedback"`
-	Created      time.Time              `json:"created"`
-	Milliseconds int64                  `json:"milliseconds"`
+	WalkingChecks *WalkingChecks         `json:"walking_checks,omitempty"`
+	ID            string                 `json:"id"`
+	Parent        string                 `json:"parent,omitempty"`
+	Recipe        Recipe                 `json:"recipe"`
+	Engine        string                 `json:"engine"`
+	Build         string                 `json:"build"`
+	Artifacts     map[string]ArtifactRef `json:"artifacts"`
+	Nodes         []NodeRecord           `json:"nodes"`
+	Metrics       Metrics                `json:"metrics"`
+	Valid         bool                   `json:"valid"`
+	Problems      []string               `json:"problems"`
+	Feedback      string                 `json:"feedback"`
+	Created       time.Time              `json:"created"`
+	Milliseconds  int64                  `json:"milliseconds"`
 }
 type CandidateEvaluator interface {
 	Evaluate(context.Context, Recipe, map[string]Artifact) (Metrics, []string, error)
@@ -482,6 +483,12 @@ func (e *Engine) Evaluate(ctx context.Context, recipe Recipe, parent string, pro
 			return nil, constraintErr
 		}
 		candidate.Problems = append(candidate.Problems, failures...)
+		if p.Source.Spec.DeckPolicy == "structural-experiment" {
+			candidate.WalkingChecks, err = reportWalkingChecks(ctx, p.Source.Spec, selected["volume"].Volume, selected["mesh"].Mesh)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	candidate.Valid = len(candidate.Problems) == 0
 	candidate.Milliseconds = time.Since(start).Milliseconds()

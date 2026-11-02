@@ -1,5 +1,9 @@
 # Constrained floor relief experiment
 
+For direct structural edits, holes and uneven deck contours, compare the
+separate [less-protected structural preset](structural-floor.md). This page
+describes the unchanged conservative variant.
+
 Choose **Bridge / floor relief (experimental)**, then set **Floor relief
 strength** (0–1) and **Floor depth** (0–0.06 meters). Either zero disables the
 deformation. The original Bridge preset remains available and unchanged.
