@@ -27,3 +27,5 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node scripts/browser-implicit-test.mjs
       - run: npm run test:floor
+      - run: npm run test:materials
+      - run: npm run test:material-detail

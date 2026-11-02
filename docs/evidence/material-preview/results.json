@@ -1,0 +1,23 @@
+{
+  "checks": [
+    "five visibly distinct presets; reference/result/overlay under every material; deterministic round trip; no API writes; byte-identical candidate JSON, GLB and export ZIP; unchanged validation/provenance",
+    "orbit/zoom, mobile layout, reload default, all materials on legacy branching geometry"
+  ],
+  "screenshots": {
+    "bridge-clay": "c71bb80d16f7bb4442d69c36e45163946c61624606751e69b5048c40ade267e4",
+    "bridge-stone": "0e9aac7358ee61aec361202aa19219c42de1d4447801954c4a1b8259e863fd40",
+    "bridge-wood": "b2627b246b6fbe86940ca3eb4379005da2202bec5ee16b38e30da1ed667f151b",
+    "wood-reference": "f8759f8935e6fdbc129a75199d3bcba7613e7958a611cab93ff8acd4fca38a4f",
+    "wood-overlay": "385c206eaa40064c7b704eaf279b9179638d5b4fb2a384c6b027538f17c98e70",
+    "bridge-metal": "d7602bf42024f5941855b27795f66d5f5a78893dd94a01d5e55649b88d77c365",
+    "bridge-glass": "b436a449de2e8a1807a8c7e18633f974d30a80d3c96f355dd6b6579be3d3779b",
+    "wood-repeat": "b2627b246b6fbe86940ca3eb4379005da2202bec5ee16b38e30da1ed667f151b",
+    "wood-light": "c70cafeb9edd06a151ac67a9233b22e6be5cd71d6e56a1872ad755606b245f8e",
+    "glass-light": "f02c3ad108d9cbe6b05b357cd8e44d5842c3acacfee6cfb2d31043a330a36202",
+    "glass-dark": "902fae0125c450a1b8becbc042ad7b1d3bfcd785634b4fdf877d48de6f95cd60",
+    "before-orbit": "7e107ce9f52413e59a688ea25f887b954b59af24860166e39c70bb87088e5005",
+    "after-orbit": "e51dcb8c0a651364875866c3207b880ad0c6473fe6a07bee36cc417404085c74",
+    "organic-wood": "3e09f7df809c0aa788463c6dc040c01e31ad14081c07d605380a205976d05828"
+  },
+  "errors": []
+}
