@@ -15,7 +15,7 @@ const evidence={workspace,cases:[],errors:[]};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 try {
  for(let i=0;i<100;i++){try{if((await fetch(base+"/api/recipes")).ok)break;}catch{}await sleep(100);}
- browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||"/usr/bin/chromium",headless:true,args:["--no-sandbox","--use-angle=swiftshader","--enable-unsafe-swiftshader"]});
+ browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH,headless:true,args:["--no-sandbox","--use-angle=swiftshader","--enable-unsafe-swiftshader"]});
  const page=await browser.newPage({viewport:{width:1512,height:1080}});
  page.on("pageerror",e=>evidence.errors.push(e.message));
  await page.goto(base);
@@ -40,8 +40,15 @@ try {
   const response=page.waitForResponse(r=>r.url()===base+"/api/jobs"&&r.request().method()==="POST");
   await page.locator("#generate").click();
   const job=await(await response).json();
-  await page.waitForFunction(()=>document.querySelector("#jobState").textContent==="COMPLETED",{}, {timeout:120000});
-  const done=await(await fetch(base+"/api/jobs/"+job.id)).json();assert.equal(done.candidates.length,1);
+  let done;
+  for(let attempt=0;attempt<240;attempt++){
+   done=await(await fetch(base+"/api/jobs/"+job.id)).json();
+   assert.ok(!["failed","cancelled"].includes(done.status),JSON.stringify(done));
+   if(done.status==="completed")break;
+   await sleep(500);
+  }
+  assert.equal(done.status,"completed",JSON.stringify(done));
+  assert.equal(done.candidates.length,1,JSON.stringify(done));
   const c=await(await fetch(base+"/api/candidates/"+done.candidates[0])).json();
   assert.ok(c.valid,JSON.stringify(c.problems));
   assert.equal(c.recipe.nodes.find(n=>n.id==="floor").params.strength,strength);

@@ -26,3 +26,4 @@ jobs:
       - run: go build -o /tmp/progen-mvp ./cmd/progen
       - run: npx playwright install --with-deps chromium
       - run: node scripts/browser-implicit-test.mjs
+      - run: npm run test:floor
